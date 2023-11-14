@@ -11,20 +11,23 @@
 #define MAX_FILE_NAME 8      // 文件名为8个字节
 #define MAX_FILE_EXTENSION 3 // 文件扩展名为3个字节
 
+#define NUM_INODE_BITMAP_BLOCK 1 // inode位图大小为1块（512B）
+#define NUM_DATA_BITMAP_BLOCK 4  // 数据块位图大小为4块（4 * 512 = 2048 Byte）
+
 /*
  * 超级块（super block），用于描述整个文件系统
  * 超级块大小为72字节（9个long），其占用1个磁盘块
 */
 struct sb {
-    long fs_size;                  // 文件系统的大小，以块为单位
-    long first_blk;                // 数据区的第一块块号，根目录也放在此
-    long datasize;                 // 数据区大小，以块为单位 
-    long first_inode;              // inode区起始块号
-    long inode_area_size;          // inode区大小，以块为单位
-    long fisrt_blk_of_inodebitmap; // inode位图区起始块号
-    long inodebitmap_size;         // inode位图区大小，以块为单位
-    long first_blk_of_databitmap;  // 数据块位图起始块号
-    long databitmap_size;          // 数据块位图大小，以块为单位
+    long fs_size;                  // 文件系统的大小，以块为单位（16*1024）
+    long first_blk;                // 数据区的第一块块号，根目录也放在此（5002）
+    long datasize;                 // 数据区大小，以块为单位（4*512*8） 
+    long first_inode;              // inode区起始块号（6）
+    long inode_area_size;          // inode区大小，以块为单位（512*8）
+    long fisrt_blk_of_inodebitmap; // inode位图区起始块号（1）
+    long inodebitmap_size;         // inode位图区大小，以块为单位（1）
+    long first_blk_of_databitmap;  // 数据块位图起始块号（2）
+    long databitmap_size;          // 数据块位图大小，以块为单位（4）
 };
 
 /*
@@ -52,14 +55,14 @@ struct inode {
  * 文件名8字节，扩展名3字节，inode号2字节（实际使用12位），备用3字节
 */
 #define UNUSED 0
-#define FILE_TYPE 1
-#define DIR_TYPE 2
+#define FILE_TYPE 1 // 普通文件
+#define DIR_TYPE 2  // 目录文件
 
 struct entry {
     char name[MAX_FILE_NAME];           // 文件名，8字节
     char extension[MAX_FILE_EXTENSION]; // 文件扩展名，3字节
     char type; // 目录项类型（0未使用，1普通文件，2目录文件）
-    short int inode;                    // inode号，2字节
+    short int inode;                    // inode号，2字节（用于获取文件数据）
     // 备用3字节，其中1字节用于判断目录项类型 
     char reserved[2];            
 };
@@ -74,8 +77,8 @@ struct dir {
  * 数据块
 */
 struct data_block {
+    char data[BLOCK_SIZE - 4]; // sizeof(size_t) = 4
     size_t size; // 该磁盘块实际占用的字节大小，不超过512字节
-    char data[BLOCK_SIZE - 8]; // sizeof(size_t) = 4
 };
 
 // 以上是SFS相关数据结构
