@@ -39,4 +39,5 @@ fusermount -u fuse
 ## Tips
 
 VSCode安装Hex Editor插件，右键点击sfs.img选择打开方式，选择Hex Editor，就可以查看该虚拟磁盘映像文件的内容，方便调试。
+
 ![image](img/sfsimg.png)

@@ -1,6 +1,8 @@
 /*
  * 描述SFS文件系统的相关数据结构（data structures）
 */
+#ifndef __SFS_DS_H__
+#define __SFS_DS_H__
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -81,5 +83,6 @@ struct data_block {
     size_t size; // 该磁盘块实际占用的字节大小，不超过512字节
 };
 
+#endif
 // 以上是SFS相关数据结构
 // ***************************************************************************************

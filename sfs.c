@@ -7,7 +7,9 @@
 #include <malloc.h>
 #include <time.h>
 #include <errno.h>
-#include "sfs_ds.h" // SFS文件系统相关数据结构
+
+#include "sfs_ds.h"    // SFS文件系统相关数据结构
+#include "sfs_utils.h" // SFS文件系统相关辅助函数
 
 // SFS全局变量
 // 文件系统载体文件路径，作为该文件系统的根目录
@@ -19,27 +21,6 @@ struct entry* work_entry;  // 工作目录
 
 // **************************************************************************************
 // 以下是辅助函数
-
-/**
- * 分割路径
- * example: path="abc/ef/g" -> head="abc", tail="ef/g"
- *          path="abc/ef"   -> head="abc", tail="ef"
- *          path="abc"      -> head="abc", tail=""
- *          path=""         -> head="", tail=""
-*/
-void split_path(const char* path, char* head, char* tail) {
-    if (path == NULL || strcmp(path, "") == 0) {
-        strcpy(head, "");
-        strcpy(tail, "");
-        return;
-    }
-    char* path_copy = (char*)malloc(sizeof(path));
-    strcpy(path_copy, path);
-    strcpy(head, path);
-    strtok(head, "/");
-    strcpy(tail, path_copy + strlen(head) + 1);
-    free(path_copy);
-}
 
 // 利用inode位图判断该inode号是否已使用
 int inode_is_used(short int ino) {
@@ -223,6 +204,14 @@ int find_inode(const char* path, struct inode* inode) {
     }
     free(entry);
     return ret;
+}
+
+/**
+ * 创建文件
+*/
+int create_file(const char* path) {
+    // TODO
+    return 0;
 }
 
 /***
@@ -595,7 +584,6 @@ static int SFS_getattr(const char *path,
 
     // 根据inode赋值stbuf(struct stat)
     memset(stbuf, 0, sizeof(struct stat));
-    printf("st_mode=%d\n", inode->st_mode);
     stbuf->st_mode = inode->st_mode;
     stbuf->st_ino = inode->st_ino;
 	stbuf->st_nlink = inode->st_nlink;
