@@ -62,6 +62,36 @@ int data_block_is_used(short int data_block_no) {
     return 0;
 }
 
+// 设置inode号对应bitmap为1表示已使用该inode
+int set_inode_bitmap_used(short int ino) {
+    // 读取inode位图
+    uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
+    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fread(inode_bitmap, sizeof(inode_bitmap), 1, fs);
+    // 定位
+    short int row = ino >> 3; // 位图的行
+    short int col = ino % 8; // 位图的列（在0~7之间）
+    // inode号对应位置设为1
+    uint8_t byte = 0 << col;
+    inode_bitmap[row] |= byte;
+    return 0;
+}
+
+// 设置数据块号对应bitmap为1表示已使用该数据块
+int set_datablock_bitmap_used(short int data_block_no) {
+    // 读取数据块位图
+    uint8_t data_block_bitmap[4 * BLOCK_SIZE] = {0};
+    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
+    fread(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
+    // 定位
+    short int row = data_block_no >> 3; // 位图的行
+    short int col = data_block_no % 8; // 位图的列（在0~7之间）
+    // 数据块号对应位置设为1
+    uint8_t byte = 0 << col;
+    data_block_bitmap[row] |= byte;
+    return 0;
+}
+
 // 根据inode号读取inode
 int read_inode(short int ino, struct inode* inode) {
     printf("[read_inode] ino=%d\n", ino);
@@ -204,14 +234,6 @@ int find_inode(const char* path, struct inode* inode) {
     }
     free(entry);
     return ret;
-}
-
-/**
- * 创建文件
-*/
-int create_file(const char* path) {
-    // TODO
-    return 0;
 }
 
 /***
