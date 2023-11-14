@@ -111,17 +111,19 @@ int read_data_block(short int data_block_no, struct data_block* data_block) {
 
 // 根据inode号写入inode
 int write_inode(short int ino, struct inode* inode) {
-    // TODO 修改bitmap
     fseek(fs, (sb->first_inode + ino) * BLOCK_SIZE, SEEK_SET);
     fwrite(inode, sizeof(struct inode), 1, fs);
+    // 修改bitmap为已使用
+    set_inode_bitmap_used(ino);
     return 0;
 }
 
 // 根据数据块号写入数据块
 int write_data_block(short int data_block_no, struct data_block* data_block) {
-    // TODO 修改bitmap
     fseek(fs, (sb->first_blk + data_block_no) * BLOCK_SIZE, SEEK_SET);
     fwrite(data_block, sizeof(struct data_block), 1, fs);
+    // 修改bitmap为已使用
+    set_datablock_bitmap_used(data_block_no);
     return 0;
 }
 
