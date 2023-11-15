@@ -62,6 +62,7 @@ int path_level(const char* path) {
 /**
  * 获得上一级目录路径
  * example: path="/abc/de/f" -> parent="/abc/de"
+ *          path="/abc" -> parent="/"
  *          path="/" -> parent="/"
 */
 void get_parent_path(const char* path, char* parent) {
@@ -76,6 +77,11 @@ void get_parent_path(const char* path, char* parent) {
             k = i;
             break;
         }
+    }
+    if (k == 0) {
+        // 第一个"/"出现在第一个字符，如"/a"，则parent为根目录
+        strcpy(parent, "/");
+        return;
     }
     strncpy(parent, path, k);
 }
