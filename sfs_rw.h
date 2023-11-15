@@ -18,7 +18,7 @@
 int inode_is_used(short int ino) {
     // inode位图
     uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
-    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fseek(fs, sb->first_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
     fread(inode_bitmap, sizeof(inode_bitmap), 1, fs); // 读取inode位图
     short int row = ino >> 3; // 位图的行
     short int col = ino % 8; // 位图的列（在0~7之间）
@@ -58,7 +58,7 @@ int data_block_is_used(short int data_block_no) {
 int set_inode_bitmap_used(short int ino) {
     // 读取inode位图
     uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
-    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fseek(fs, sb->first_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
     fread(inode_bitmap, sizeof(inode_bitmap), 1, fs);
     // 定位
     short int row = ino >> 3; // 位图的行
@@ -67,7 +67,7 @@ int set_inode_bitmap_used(short int ino) {
     uint8_t byte = 0 << col;
     inode_bitmap[row] |= byte;
     // 写回磁盘
-    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fseek(fs, sb->first_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
     fwrite(inode_bitmap, sizeof(inode_bitmap), 1, fs);
     printf("[set_inode_bitmap_used] ino=%d\n", ino);
     return 0;
@@ -99,7 +99,7 @@ int set_datablock_bitmap_used(short int data_block_no) {
 int get_free_ino(short int* ino) {
     // 读取bitmap
     uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
-    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fseek(fs, sb->first_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
     fread(inode_bitmap, sizeof(inode_bitmap), 1, fs);
     // inode bitmap占1个block（512B）
     int num_inodes = NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE * 8;

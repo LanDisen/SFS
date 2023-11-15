@@ -34,7 +34,7 @@ struct sb {
     long datasize;                 // 数据区大小，以块为单位（4*512*8） 
     long first_inode;              // inode区起始块号（6）
     long inode_area_size;          // inode区大小，以块为单位（512*8）
-    long fisrt_blk_of_inodebitmap; // inode位图区起始块号（1）
+    long first_blk_of_inodebitmap; // inode位图区起始块号（1
     long inodebitmap_size;         // inode位图区大小，以块为单位（1）
     long first_blk_of_databitmap;  // 数据块位图起始块号（2）
     long databitmap_size;          // 数据块位图大小，以块为单位（4）
