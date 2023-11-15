@@ -55,10 +55,20 @@ int add_entry(struct entry* parent_entry, struct entry* new_entry) {
         parent_entry->inode = *ino;
         free(ino);
     }
+    // 读取父目录inode，将new_entry添加进去
     struct inode* inode = (struct inode*)malloc(sizeof(inode));
     read_inode(parent_entry->inode, inode);
-    
+    struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
+    get_last_datablock(inode, last_datablock);
+    // 将new_entry写入该数据块
+    off_t used_size = inode->st_size % BLOCK_SIZE; // 该数据块前面已使用的空间大小
+    memcpy(last_datablock + used_size, new_entry, sizeof(struct entry));
+    inode->st_size += sizeof(struct entry); // 修改目录大小
 
+    free(inode);
+    inode = NULL;
+    free(last_datablock);
+    last_datablock = NULL;
     return 0;
 }
 
@@ -535,75 +545,99 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
 
     // 检查文件系统是否已经初始化，可以通过检查超级块的fs_size来实现
     sb = malloc(sizeof(struct sb));
+    root_entry = (struct entry*)malloc(sizeof(struct entry));
     fseek(fs, 0, SEEK_SET);              // 定位超级块位置
     fread(sb, sizeof(struct sb), 1, fs); // 读取超级块数据
-
-    // 初始化根目录
-    root_entry = (struct entry*)malloc(sizeof(struct entry));
-    strcpy(root_entry->name, "/");     // 根目录为"/"
-    strcpy(root_entry->extension, ""); // 目录扩展名为空字符串
-    root_entry->type = DIR_TYPE;       // 目录文件类型
-    root_entry->inode = 0;             // 根目录的inode号为0
-    work_entry = root_entry;           // 当前工作目录为根目录
 
     if (sb->fs_size > 0) {
         // 文件系统已初始化，无需再次初始化虚拟磁盘文件sfs.img
         printf("[SFS_init] SFS has been initialized\n");
-        // 检查超级块属性
-        printf("super block: first inode bitmap=%ld\n", sb->fisrt_blk_of_inodebitmap);
-        printf("super block: inode bitmap size=%ld\n", sb->inodebitmap_size);
-        printf("super block: first datablock bitmap=%ld\n", sb->first_blk_of_databitmap);
-        printf("super block: datablock bitmap size=%ld\n", sb->databitmap_size);
-        printf("super block: first inode=%ld\n", sb->first_inode);
-        printf("super block: first datablock=%ld\n", sb->first_blk);
-        return NULL;
+        // 读取根目录entry
+        struct data_block* root_datablock = (struct data_block*)malloc(sizeof(struct data_block));
+        read_data_block(0, root_datablock);
+        memcpy(root_entry, root_datablock, sizeof(struct entry));
+        work_entry = root_entry;
+        free(root_datablock);
+        root_datablock = NULL;
+    } else {
+        // 进行虚拟磁盘初始化
+        printf("[SFS_init] Start initializing SFS\n");
+        // 文件系统虚拟磁盘尚未初始化，进行初始化操作（格式化）
+        // 首先填充超级块（超级块位于第0块）
+        sb->fs_size = FS_SIZE / BLOCK_SIZE; // 文件系统大小，以块为单位，共16*1024块
+        sb->fisrt_blk_of_inodebitmap = 1; // inode位图的第一块块号
+        sb->inodebitmap_size = NUM_INODE_BITMAP_BLOCK; // inode位图大小为1块（512B）
+        sb->first_blk_of_databitmap = sb->fisrt_blk_of_inodebitmap + sb->inodebitmap_size; // 数据块位图的第一块块号（第2块）
+        sb->databitmap_size = NUM_DATA_BITMAP_BLOCK; // 数据块位图大小为4块（4 * 512 = 2048 Byte）
+        sb->first_inode = sb->first_blk_of_databitmap + sb->databitmap_size; // inode区的第一块块号（第6块）
+        sb->inode_area_size = sb->inodebitmap_size * BLOCK_SIZE * 8; // inode区大小为512*8块，该文件系统最多有4k个文件
+        sb->first_blk = sb->first_inode + sb->inode_area_size; // 数据区的第一块块号（6 + 4096 = 4102），img: 0x200C00
+        sb->datasize = sb->databitmap_size * BLOCK_SIZE * 8; // 数据区大小为4*512*8块
+
+        // 将超级块数据写到到文件系统载体文件
+        fseek(fs, 0, SEEK_SET);
+        fwrite(sb, sizeof(struct sb), 1, fs);
+
+        // 初始化inode位图和数据块位图
+        uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0}; // 1块inode位图，表示最多4k个文件
+        uint8_t data_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0}; // 4块数据块位图
+
+        // 初始化根目录属性
+        strcpy(root_entry->name, "/");     // 根目录为"/"
+        strcpy(root_entry->extension, ""); // 目录扩展名为空字符串
+        root_entry->type = DIR_TYPE;       // 目录文件类型
+        root_entry->inode = -1;            // 根目录的inode号为0
+        work_entry = root_entry;           // 当前工作目录为根目录
+
+        // 将根目录的相关信息填写到inode区的第一个inode
+        struct inode* root_inode = (struct inode*)malloc(sizeof(struct inode));
+        root_inode->st_mode  = __S_IFDIR | 0755; // 目录文件
+        // root_inode->st_mode = 0755;
+        root_inode->st_ino   = 0; // 根目录的inode号为0（第一个）
+        root_inode->st_nlink = 2; // 链接引用数
+        root_inode->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
+        root_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
+        root_inode->st_size  = 0; // 初始大小为空
+
+        // 将根目录entry写入第一个数据块
+        struct data_block* root_datablock = (struct data_block*)malloc(sizeof(struct data_block));
+        memcpy(root_datablock, root_entry, sizeof(struct entry));
+
+        // 设置根目录inode位图的第一个字节的第一位为1，表示第一个inode已分配（根目录）
+        inode_bitmap[0] |= 0x80;
+
+        fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET); // 定位到inode位图区
+        fwrite(inode_bitmap, sizeof(inode_bitmap), 1, fs); // 写入inode位图数据
+
+        fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET); // 定位到数据块位图区
+        fwrite(data_bitmap, sizeof(data_bitmap), 1, fs); // 写入数据块位图数据
+
+        // 初始化根目录inode和数据块
+        write_inode(0, root_inode);
+        write_data_block(0, root_datablock);
+
+        // 完成文件系统初始化，关闭文件系统载体文件 
+        free(root_inode);
+        free(root_datablock);
+        root_inode = NULL;
+        root_datablock = NULL;
     }
 
-    printf("[SFS_init] Start initializing SFS\n");
-    // 文件系统尚未初始化，进行初始化操作（格式化）
-    // 首先填充超级块（超级块位于第0块）
-    sb->fs_size = FS_SIZE / BLOCK_SIZE; // 文件系统大小，以块为单位，共16*1024块
-    sb->fisrt_blk_of_inodebitmap = 1; // inode位图的第一块块号
-    sb->inodebitmap_size = NUM_INODE_BITMAP_BLOCK; // inode位图大小为1块（512B）
-    sb->first_blk_of_databitmap = sb->fisrt_blk_of_inodebitmap + sb->inodebitmap_size; // 数据块位图的第一块块号（第2块）
-    sb->databitmap_size = NUM_DATA_BITMAP_BLOCK; // 数据块位图大小为4块（4 * 512 = 2048 Byte）
-    sb->first_inode = sb->first_blk_of_databitmap + sb->databitmap_size; // inode区的第一块块号（第6块）
-    sb->inode_area_size = sb->inodebitmap_size * BLOCK_SIZE * 8; // inode区大小为512*8块，该文件系统最多有4k个文件
-    sb->first_blk = sb->first_inode + sb->inode_area_size; // 数据区的第一块块号（6 + 4096 = 5002）
-    sb->datasize = sb->databitmap_size * BLOCK_SIZE * 8; // 数据区大小为4*512*8块
+    // 检查超级块属性
+    printf("\tsuper block: first inode bitmap=%ld\n", sb->fisrt_blk_of_inodebitmap);
+    printf("\tsuper block: inode bitmap size=%ld\n", sb->inodebitmap_size);
+    printf("\tsuper block: first datablock bitmap=%ld\n", sb->first_blk_of_databitmap);
+    printf("\tsuper block: datablock bitmap size=%ld\n", sb->databitmap_size);
+    printf("\tsuper block: first inode=%ld\n", sb->first_inode);
+    printf("\tsuper block: first datablock=%ld\n", sb->first_blk);
+    printf("\tsuper block: file system size=%ld\n", sb->fs_size);
 
-    // 将超级块数据写到到文件系统载体文件
-    fseek(fs, 0, SEEK_SET);
-    fwrite(sb, sizeof(struct sb), 1, fs);
+    char* type = root_entry->type == DIR_TYPE ? "DIR": "FILE";
+    printf("\troot entry: name=%s\n", root_entry->name);
+    printf("\troot entry: type=%s\n", type);
+    printf("\troot entry: int type=%d\n", root_entry->type);
+    printf("\troot entry: inode=%d\n", root_entry->inode);
 
-    // 初始化inode位图和数据块位图
-    uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0}; // 1块inode位图，表示最多4k个文件
-    uint8_t data_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0}; // 4块数据块位图
-    // 将根目录的相关信息填写到inode区的第一个inode
-    struct inode* root_inode = (struct inode*)malloc(sizeof(struct inode));
-    root_inode->st_mode  = __S_IFDIR | 0755; // 目录文件
-    // root_inode->st_mode = 0755;
-    root_inode->st_ino   = 0; // 根目录的inode号为0（第一个）
-    root_inode->st_nlink = 2; // 链接引用数
-    root_inode->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
-    root_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
-    root_inode->st_size  = 4096; // 初始大小为 4kB
-
-    // 设置根目录inode位图的第一个字节的第一位为1，表示第一个inode已分配（根目录）
-    inode_bitmap[0] |= 0x80;
-
-    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET); // 定位到inode位图区
-    fwrite(inode_bitmap, sizeof(inode_bitmap), 1, fs); // 写入inode位图数据
-
-    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET); // 定位到数据块位图区
-    fwrite(data_bitmap, sizeof(data_bitmap), 1, fs); // 写入数据块位图数据
-
-    // 写入根目录的inode到inode区
-    fseek(fs, sb->first_inode * BLOCK_SIZE, SEEK_SET); // 定位到inode区
-    fwrite(root_inode, sizeof(struct inode), 1, fs);  // 写入inode区数据
-
-    // 完成文件系统初始化，关闭文件系统载体文件 
-    free(root_inode);
     // fclose(fs);
     return NULL;
 }

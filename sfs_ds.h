@@ -30,7 +30,7 @@ struct entry* work_entry;  // 工作目录
 */
 struct sb {
     long fs_size;                  // 文件系统的大小，以块为单位（16*1024）
-    long first_blk;                // 数据区的第一块块号，根目录也放在此（5002）
+    long first_blk;                // 数据区的第一块块号，根目录也放在此（4102）
     long datasize;                 // 数据区大小，以块为单位（4*512*8） 
     long first_inode;              // inode区起始块号（6）
     long inode_area_size;          // inode区大小，以块为单位（512*8）

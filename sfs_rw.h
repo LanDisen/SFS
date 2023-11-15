@@ -157,7 +157,7 @@ int read_inode(short int ino, struct inode* inode) {
 // 根据数据块号读取数据块
 int read_data_block(short int data_block_no, struct data_block* data_block) {
     fseek(fs, (sb->first_blk + data_block_no) * BLOCK_SIZE, SEEK_SET);
-    fread(data_block, sizeof(data_block), 1, fs);
+    fread(data_block, sizeof(struct data_block), 1, fs);
     // 读取成功
     return 0;
 }
@@ -180,6 +180,9 @@ int write_data_block(short int data_block_no, struct data_block* data_block) {
     return 0;
 }
 
+// 以上是bitmap、inode、数据块相关函数
+
+/*------------------------------------------------*/
 /* inode迭代器相关函数 */
 void init_inode_iter(struct inode_iter* iter, struct inode* inode) {
     iter->inode = inode;
@@ -210,6 +213,39 @@ void next(struct inode_iter* iter, struct data_block* data_block) {
     } else if (iter->index == 4) {
         // TODO 一级间接索引
     }
+}
+
+// 获取inode指向的最后一个还有空余空间的数据块，若最后一块满则分配一个新的数据块
+// 分配新的数据块后，不会修改inode的文件大小
+int get_last_datablock(struct inode* inode, struct data_block* datablock) {
+    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
+    init_inode_iter(iter, inode);
+    while (has_next(iter)) {
+        next(iter, datablock);
+    }
+    if (iter->read_size == inode->st_size) {
+        // 最后一个数据块已满，需要重新分配
+        short int* datablock_no = (short int*)malloc(sizeof(short int));
+        // 获取一个空闲数据块的快号
+        if (get_free_datablock_no(datablock_no) == -1) {
+            // 无空闲数据块
+            printf("[alloc_datablock] Error: there is no free datablock");
+            free(datablock_no);
+            datablock_no = NULL;
+            datablock = NULL;
+            return -1;
+        }
+        // 获得了空闲的数据块
+        set_datablock_bitmap_used(*datablock_no); // 设置数据块bitmap
+        read_data_block(*datablock_no, datablock);
+        inode->addr[iter->index] = *datablock_no;
+        free(datablock_no);
+        datablock_no = NULL;
+    }
+    // 最后一个数据块未满，此时datablock已经是最后一个
+    free(iter);
+    iter = NULL;
+    return 0;
 }
 
 #endif
