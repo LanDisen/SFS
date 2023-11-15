@@ -52,6 +52,7 @@ int add_entry(struct entry* parent_entry, struct entry* new_entry) {
             free(ino);
             return -1;
         }
+        // 初始化ino
         parent_entry->inode = *ino;
         free(ino);
     }
@@ -93,36 +94,7 @@ int read_dir(struct inode* inode, struct dir* dir) {
         }        
     }
     free(iter);
-    
-    // off_t read_size = 0; // 已读取的数据块大小
-    // int index = 0; // 索引级别
-    
-    // while (read_size < inode->st_size) {
-    //     if (index <= 3) {       
-    //         // 直接索引（index=0, 1, 2, 3）
-    //         // 读取数据块号并判断位图有无使用该数据块
-    //         short int data_block_no = inode->addr[index++];
-    //         if (!data_block_is_used(data_block_no)) {
-    //             continue;
-    //         }
-    //         struct data_block* data_block = malloc(sizeof(data_block));
-    //         read_data_block(data_block_no, data_block); // 读取对应数据块
-    //         size_t datablock_size = 0;
-    //         while (datablock_size < data_block->size) {
-    //             // 从数据块中取出目录项entry集合放到dir中
-    //             struct entry* entry = malloc(sizeof(struct entry));
-    //             memcpy(entry, data_block->data, sizeof(struct entry));
-    //             dir->entries[dir->num_entries++] = entry;
-    //             datablock_size += sizeof(struct entry);
-    //         }
-    //         read_size += data_block->size;
-    //         free(data_block);
-    //     } else if (index == 4) {
-    //         // 一级索引
-    //         // TODO inode多级索引实现
-    //         break;
-    //     }
-    // }
+
     return 0;
 }
 
@@ -261,6 +233,8 @@ int find_inode(const char* path, struct inode* inode) {
     if (find_entry(path, entry) == 0) {
         // 存在该路径
         ret = read_inode(entry->inode, inode);
+    } else {
+        inode = NULL;
     }
     free(entry);
     return ret;
@@ -509,19 +483,6 @@ struct inode* find_inode(const char* path) {
     return NULL;
 }
 
-// 根据inode号将对应数据读到block指针中
-// int read_block(uint16_t inode, struct block* block) {
-//     FILE* fp = NULL;
-//     fp = fopen(fs_img, "r+");
-//     if (fp == NULL) {
-//         打开文件系统载体文件失败
-//         printf("Failed to open the file system image\n");
-//         return -1;
-//     }
-//     成功打开文件系统载体文件，读取inode对应数据块
-//     return 0;
-// }
-
 ***/
 
 // ************************************************************************************
@@ -631,11 +592,10 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
     printf("\tsuper block: first inode=%ld\n", sb->first_inode);
     printf("\tsuper block: first datablock=%ld\n", sb->first_blk);
     printf("\tsuper block: file system size=%ld\n", sb->fs_size);
-
+    // 检查root_entry
     char* type = root_entry->type == DIR_TYPE ? "DIR": "FILE";
     printf("\troot entry: name=%s\n", root_entry->name);
     printf("\troot entry: type=%s\n", type);
-    printf("\troot entry: int type=%d\n", root_entry->type);
     printf("\troot entry: inode=%d\n", root_entry->inode);
 
     // fclose(fs);
@@ -650,11 +610,12 @@ static int SFS_getattr(const char *path,
     printf("[SFS_getattr] path=%s\n", path);
 
     struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
-    find_inode(path, inode);
+    // find_inode(path, inode);
 
-    if (inode == NULL) {
-        printf("[SFS_getattr] Error: inode is NULL\n");
-        return -1;
+    if (find_inode(path, inode) == -1) {
+        printf("[SFS_getattr] Error: path %s is not existed\n", path);
+        //return -1; // operation not permitted
+        return -ENOENT; // 没有该目录或文件
     }
 
     // 根据inode赋值stbuf(struct stat)
@@ -673,20 +634,40 @@ static int SFS_getattr(const char *path,
     return 0;
 }
 
-// 读取目录
+/**
+ * 读取目录，readdir在ls过程中每次仅会返回一个目录项
+ * 其中offset参数记录着当前一个返回的目录项
+*/
 static int SFS_readdir(const char* path, void* buf, 
                        fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi,
                        enum fuse_readdir_flags flags) {
     // TODO SFS_readdir 读取目录
-    (void) offset;
     (void) fi;
-   
-    if (strcmp(path, "/") != 0) {
-        return -ENOENT; // 目录不存在
+    off_t cur = offset;
+    printf("[SFS_readir] path=%s\n", path);
+    struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+    if (find_entry(path, entry) == -1) {
+        printf("[SFS_readir] Error: this path %s does not exist\n", path);
+        return -1;
+    }
+    // 存在该路径对应entry
+    short int ino = entry->inode;
+
+    struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
+    read_inode(ino, inode);
+    struct dir* dir = (struct dir*)malloc(sizeof(struct dir));
+    read_dir(inode, dir);
+    if (cur < dir->num_entries) {
+        filler(buf, dir->entries[cur]->name, NULL, cur, 0);
+        cur += 1;
     }
 
-    filler(buf, ".", NULL, 0, 0);
-    filler(buf, "..", NULL, 0, 0);
+    // if (strcmp(path, "/") != 0) {
+    //     return -ENOENT; // 目录不存在
+    // }
+
+    // filler(buf, ".", NULL, 0, 0);
+    // filler(buf, "..", NULL, 0, 0);
 
     return 0;
 }
@@ -694,6 +675,7 @@ static int SFS_readdir(const char* path, void* buf,
 // 创建目录
 static int SFS_mkdir(const char* path, mode_t mode) {
     // TODO SFS_mkdir 创建目录
+    printf("[SFS_mkdir] path=%s\n", path);
     (void) mode;
     struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
     char* parent_path = (char*)malloc(sizeof(path));
@@ -706,6 +688,8 @@ static int SFS_mkdir(const char* path, mode_t mode) {
         free(parent_path);
         return -1;
     }
+    // TODO 检查是否已存在
+    // return -EEXIST; // 文件已存在
     // 寻找空闲inode
     short int* ino = (short int*)malloc(sizeof(short int));
     get_free_ino(ino);
@@ -720,16 +704,26 @@ static int SFS_mkdir(const char* path, mode_t mode) {
 
     // 创建新的entry作为目录文件
     struct entry* new_entry = (struct entry*)malloc(sizeof(struct entry));
+    // 创建新inode指向new_entry
+    struct inode* new_inode = (struct inode*)malloc(sizeof(struct inode));
+    new_inode->st_mode  = __S_IFDIR | 0755; // 目录文件
+    new_inode->st_ino = *ino;
+    new_inode->st_nlink = 2; // 链接引用数
+    new_inode->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
+    new_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
+    new_inode->st_size  = 0; // 初始大小为空
+    // 将该inode写入虚拟磁盘
+    set_inode_bitmap_used(*ino);
+    write_inode(*ino, new_inode);
+
+
     char file_name[MAX_FILE_NAME];
     get_file_name(path, file_name);
     strcpy(new_entry->name, file_name);
     strcpy(new_entry->extension, "");
     new_entry->type = DIR_TYPE;
     new_entry->inode = -1; // 目录下还没有内容
-    
-
-
-
+    add_entry(parent_entry, new_entry);
 
     return 0;
 }
