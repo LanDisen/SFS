@@ -20,6 +20,7 @@
 */
 void split_path(const char* path, char* head, char* tail) {
     if (strstr(path, "/") == NULL) {
+        // path中没有分隔符
         strcpy(head, path);
         strcpy(tail, "");
         return;
@@ -85,7 +86,6 @@ void get_file_name(const char* path, char* file_name) {
     strcpy(path_copy, path);
     char* head = (char*)malloc(sizeof(path));
     char* tail = (char*)malloc(sizeof(path));
-    int i = 0;
     do {
         split_path(path_copy, head, tail);
         strcpy(path_copy, tail);

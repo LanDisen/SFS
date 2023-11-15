@@ -16,6 +16,14 @@
 #define NUM_INODE_BITMAP_BLOCK 1 // inode位图大小为1块（512B）
 #define NUM_DATA_BITMAP_BLOCK 4  // 数据块位图大小为4块（4 * 512 = 2048 Byte）
 
+// SFS全局变量
+// 文件系统载体文件路径，作为该文件系统的根目录
+char* fs_img = "/home/ubuntu/code/SFS/sfs.img";
+FILE* fs;              // 文件系统载体文件
+struct sb* sb;         // 超级块作为SFS文件系统的全局变量
+struct entry* root_entry;  // 根目录
+struct entry* work_entry;  // 工作目录
+
 /*
  * 超级块（super block），用于描述整个文件系统
  * 超级块大小为72字节（9个long），其占用1个磁盘块
@@ -82,6 +90,21 @@ struct data_block {
     char data[BLOCK_SIZE - 4]; // sizeof(size_t) = 4
     size_t size; // 该磁盘块实际占用的字节大小，不超过512字节
 };
+
+/**
+ * inode迭代器，一次取出一个数据块
+*/
+struct inode_iter {
+    struct inode* inode;
+    size_t cur;       // 当前迭代位置
+    size_t read_size; // 已读取数据块大小
+    int index;        // 当前索引下标
+};
+
+// void init_inode_iter(struct inode_iter* iter, struct inode* inode) {
+//     iter->inode = inode;
+//     iter->read_size = 0;
+// }
 
 #endif
 // 以上是SFS相关数据结构

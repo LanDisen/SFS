@@ -9,182 +9,55 @@
 #include <errno.h>
 
 #include "sfs_ds.h"    // SFS文件系统相关数据结构
+#include "sfs_rw.h"    // SFS文件系统相关读写操作
 #include "sfs_utils.h" // SFS文件系统相关辅助函数
 
-// SFS全局变量
-// 文件系统载体文件路径，作为该文件系统的根目录
-char* fs_img = "/home/ubuntu/code/SFS/sfs.img";
-FILE* fs;              // 文件系统载体文件
-struct sb* sb;         // 超级块作为SFS文件系统的全局变量
-struct entry* root_entry;  // 根目录
-struct entry* work_entry;  // 工作目录
 
 // **************************************************************************************
 // 以下是辅助函数
 
-// 利用inode位图判断该inode号是否已使用
-int inode_is_used(short int ino) {
-    // inode位图
-    uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
-    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
-    fread(inode_bitmap, sizeof(inode_bitmap), 1, fs); // 读取inode位图
-    short int row = ino >> 3; // 位图的行
-    short int col = ino % 8; // 位图的列（在0~7之间）
-    uint8_t byte = inode_bitmap[row];
-    // 根据bitmap判断该inode号是否已使用
-    // 如: byte = 10100100, col = 4 = 00000100
-    // byte & col = 00000100 != 0 可用于判断inode是否存在
-    if ((byte & col) != 0) {
-        // 该inode已使用
-        return 1;
-    }
-    // 该inode未使用
-    return 0;
-}
-
-// 利用数据块位图判断对应数据块是否已使用
-int data_block_is_used(short int data_block_no) {
-    // 数据块位图
-    uint8_t data_block_bitmap[4 * BLOCK_SIZE] = {0};
-    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
-    fread(data_block_bitmap, sizeof(data_block_bitmap), 1, fs); // 读取数据块位图
-    short int row = data_block_no >> 3; // 位图的行
-    short int col = data_block_no % 8; // 位图的列（在0~7之间）
-    uint8_t byte = data_block_bitmap[row];
-    // 根据bitmap判断该数据块是否已使用
-    // 如: byte = 10100100, col = 4 = 00000100
-    // byte & col = 00000100 != 0 可用于判断inode是否存在
-    if ((byte & col) != 0) {
-        // 该inode已使用
-        return 1;
-    }
-    // 该inode未使用
-    return 0;
-}
-
-// 设置inode号对应bitmap为1表示已使用该inode
-int set_inode_bitmap_used(short int ino) {
-    // 读取inode位图
-    uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
-    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
-    fread(inode_bitmap, sizeof(inode_bitmap), 1, fs);
-    // 定位
-    short int row = ino >> 3; // 位图的行
-    short int col = ino % 8; // 位图的列（在0~7之间）
-    // inode号对应位置设为1
-    uint8_t byte = 0 << col;
-    inode_bitmap[row] |= byte;
-    return 0;
-}
-
-// 设置数据块号对应bitmap为1表示已使用该数据块
-int set_datablock_bitmap_used(short int data_block_no) {
-    // 读取数据块位图
-    uint8_t data_block_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0};
-    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
-    fread(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
-    // 定位
-    short int row = data_block_no >> 3; // 位图的行
-    short int col = data_block_no % 8; // 位图的列（在0~7之间）
-    // 数据块号对应位置设为1
-    uint8_t byte = 0 << col;
-    data_block_bitmap[row] |= byte;
-    return 0;
-}
+// int read_entry(struct inode* inode, struct entry* entry) {
+//     off_t read_size = 0; // 已读取的数据块大小
+//     int index = 0; // 索引级别
+//     while (read_size < inode->st_size) {
+//         if (index <= 3) { 
+//             直接索引
+//             short int data_block_no = inode->addr[index++];
+//             if (!data_block_is_used(data_block_no)) {
+//                 continue;
+//             }
+//             struct data_block* data_block = malloc(sizeof(data_block));
+//             read_data_block(data_block_no, data_block); // 读取对应数据块
+//             将数据块中存放的entry内容拷贝出来
+//             memcpy(entry, data_block->data, sizeof(entry));
+//             free(data_block);
+//             break;
+//         }
+//     }
+//     return 0;
+// }
 
 /**
- * 获取空闲的inode号
- * 若没有空闲inode则*ino=-1
+ * 在父目录parent_entry下添加新的entry
 */
-int get_free_ino(short int* ino) {
-    // 读取bitmap
-    uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
-    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
-    fread(inode_bitmap, sizeof(inode_bitmap), 1, fs);
-    // inode bitmap占1个block（512B）
-    int num_inodes = NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE * 8;
-    int rows = num_inodes / 8;
-    for (int i=0; i<rows; i++) {
-        uint8_t byte = inode_bitmap[i];
-        if (byte != 0xFF) {
-            // byte不是全1，该行有空闲inode
-            for (int j=7; j>=0; j--) {
-                if (((byte >> j) & 1) == 0) {
-                    // 有空闲inode
-                    *ino = i * 8 + (7 - j);
-                    return 0;
-                }
-            }
-            
+int add_entry(struct entry* parent_entry, struct entry* new_entry) {
+    if (parent_entry->inode == -1) {
+        // 空目录，分配新的inode存放entry
+        short int* ino = (short int*)malloc(sizeof(short int));
+        get_free_ino(ino);
+        if (*ino == -1) {
+            // 没有空闲inode
+            printf("[add_entry] Error: there is no free inode");
+            free(ino);
+            return -1;
         }
+        parent_entry->inode = *ino;
+        free(ino);
     }
-    // 未找到空闲inode
-    *ino = -1;
-    return -1;
-}
+    struct inode* inode = (struct inode*)malloc(sizeof(inode));
+    read_inode(parent_entry->inode, inode);
+    
 
-/**
- * 获取空闲的数据块号
- * 未找到空闲数据块则*datablock_no=-1
-*/
-int get_free_datablock_no(short int* datablock_no) {
-    // 读取bitmap
-    uint8_t data_block_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0};
-    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
-    fread(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
-    // 数据块bitmap占4个block（4*512B=2048B）
-    int num_datablocks = NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE * 8;
-    int rows = num_datablocks / 8;
-    for (int i=0; i<rows; i++) {
-        uint8_t byte = data_block_bitmap[i];
-        if (byte != 0xFF) {
-            // byte不是全1，该行有空闲数据块
-            for (int j=7; j>=0; j--) {
-                if (((byte >> j) & 1) == 0) {
-                    // 有空闲数据块
-                    *datablock_no = i * 8 + (7 - j);
-                    return 0;
-                }
-            }
-        }
-    }
-    // 未找到空闲数据块
-    *datablock_no = -1;
-    return -1;
-}
-
-// 根据inode号读取inode
-int read_inode(short int ino, struct inode* inode) {
-    printf("[read_inode] ino=%d\n", ino);
-    fseek(fs, (sb->first_inode + ino) * BLOCK_SIZE, SEEK_SET);
-    fread(inode, sizeof(struct inode), 1, fs); // 读取inode数据
-    // 读取成功
-    return 0;
-}
-
-// 根据数据块号读取数据块
-int read_data_block(short int data_block_no, struct data_block* data_block) {
-    fseek(fs, (sb->first_blk + data_block_no) * BLOCK_SIZE, SEEK_SET);
-    fread(data_block, sizeof(data_block), 1, fs);
-    // 读取成功
-    return 0;
-}
-
-// 根据inode号写入inode
-int write_inode(short int ino, struct inode* inode) {
-    fseek(fs, (sb->first_inode + ino) * BLOCK_SIZE, SEEK_SET);
-    fwrite(inode, sizeof(struct inode), 1, fs);
-    // 修改bitmap为已使用
-    set_inode_bitmap_used(ino);
-    return 0;
-}
-
-// 根据数据块号写入数据块
-int write_data_block(short int data_block_no, struct data_block* data_block) {
-    fseek(fs, (sb->first_blk + data_block_no) * BLOCK_SIZE, SEEK_SET);
-    fwrite(data_block, sizeof(struct data_block), 1, fs);
-    // 修改bitmap为已使用
-    set_datablock_bitmap_used(data_block_no);
     return 0;
 }
 
@@ -213,6 +86,7 @@ int read_dir(struct inode* inode, struct dir* dir) {
                 datablock_size += sizeof(struct entry);
             }
             read_size += data_block->size;
+            free(data_block);
         } else if (index == 4) {
             // 一级索引
             // TODO inode多级索引实现
@@ -718,7 +592,6 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
 static int SFS_getattr(const char *path, 
                        struct stat *stbuf, 
                        struct fuse_file_info *fi) {
-    // TODO
     (void) fi;
     printf("[SFS_getattr] path=%s\n", path);
 
@@ -779,11 +652,27 @@ static int SFS_mkdir(const char* path, mode_t mode) {
         free(parent_path);
         return -1;
     }
+    // 寻找空闲inode
+    short int* ino = (short int*)malloc(sizeof(short int));
+    get_free_ino(ino);
+    if (*ino == -1) {
+        // 没有空闲inode
+        printf("[SFS_mkdir] Error: there is no free inode for new entry\n");
+        free(parent_entry);
+        free(parent_path);
+        free(ino);
+        return -1;
+    }
+
     // 创建新的entry作为目录文件
     struct entry* new_entry = (struct entry*)malloc(sizeof(struct entry));
     char file_name[MAX_FILE_NAME];
     get_file_name(path, file_name);
     strcpy(new_entry->name, file_name);
+    strcpy(new_entry->extension, "");
+    new_entry->type = DIR_TYPE;
+    new_entry->inode = -1; // 目录下还没有内容
+    
 
 
 
