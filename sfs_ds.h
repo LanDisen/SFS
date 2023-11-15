@@ -87,8 +87,9 @@ struct dir {
  * 数据块
 */
 struct data_block {
-    char data[BLOCK_SIZE - 4]; // sizeof(size_t) = 4
-    size_t size; // 该磁盘块实际占用的字节大小，不超过512字节
+    // char data[BLOCK_SIZE - 4]; // sizeof(size_t) = 4
+    // size_t size; // 该磁盘块实际占用的字节大小，不超过512字节
+    char data[BLOCK_SIZE];
 };
 
 /**
@@ -101,10 +102,6 @@ struct inode_iter {
     int index;        // 当前索引下标
 };
 
-// void init_inode_iter(struct inode_iter* iter, struct inode* inode) {
-//     iter->inode = inode;
-//     iter->read_size = 0;
-// }
 
 #endif
 // 以上是SFS相关数据结构

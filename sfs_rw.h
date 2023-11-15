@@ -180,4 +180,36 @@ int write_data_block(short int data_block_no, struct data_block* data_block) {
     return 0;
 }
 
+/* inode迭代器相关函数 */
+void init_inode_iter(struct inode_iter* iter, struct inode* inode) {
+    iter->inode = inode;
+    iter->read_size = 0;
+    iter->index = 0;
+}
+
+int has_next(struct inode_iter* iter) {
+    if (iter->read_size >= iter->inode->st_size || iter->index > 6) {
+        // 超出间接索引级别，或者已读取完全部数据
+        return 0;
+    }
+    return 1; // 有下一个数据块
+}
+
+// 一次取出一个可用的数据块（512B）
+void next(struct inode_iter* iter, struct data_block* data_block) {
+    if (iter->index <= 3) {
+        // 直接索引
+        short int data_block_no = iter->inode->addr[iter->index];
+        iter->index += 1;
+        if (!data_block_is_used(data_block_no)) {
+            next(iter, data_block);
+        }
+        read_data_block(data_block_no, data_block);
+        iter->read_size += sizeof(data_block);
+        return;
+    } else if (iter->index == 4) {
+        // TODO 一级间接索引
+    }
+}
+
 #endif

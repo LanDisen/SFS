@@ -7,6 +7,7 @@
 #include <malloc.h>
 #include <time.h>
 #include <errno.h>
+#include <math.h>
 
 #include "sfs_ds.h"    // SFS文件系统相关数据结构
 #include "sfs_rw.h"    // SFS文件系统相关读写操作
@@ -63,36 +64,55 @@ int add_entry(struct entry* parent_entry, struct entry* new_entry) {
 
 // 根据inode号获取目录（包括子目录和文件）
 int read_dir(struct inode* inode, struct dir* dir) {
+    // TODO 实现read_dir
     dir->num_entries = 0;
-    off_t read_size = 0; // 已读取的数据块大小
-    int index = 0; // 索引级别
-    
-    while (read_size < inode->st_size) {
-        if (index <= 3) {       
-            // 直接索引（index=0, 1, 2, 3）
-            // 读取数据块号并判断位图有无使用该数据块
-            short int data_block_no = inode->addr[index++];
-            if (!data_block_is_used(data_block_no)) {
-                continue;
-            }
-            struct data_block* data_block = malloc(sizeof(data_block));
-            read_data_block(data_block_no, data_block); // 读取对应数据块
-            size_t datablock_size = 0;
-            while (datablock_size < data_block->size) {
-                // 从数据块中取出目录项entry集合放到dir中
-                struct entry* entry = malloc(sizeof(struct entry));
-                memcpy(entry, data_block->data, sizeof(struct entry));
-                dir->entries[dir->num_entries++] = entry;
-                datablock_size += sizeof(struct entry);
-            }
-            read_size += data_block->size;
-            free(data_block);
-        } else if (index == 4) {
-            // 一级索引
-            // TODO inode多级索引实现
-            break;
-        }
+    off_t file_size = inode->st_size;
+
+    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
+    init_inode_iter(iter, inode);
+    struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
+    while (has_next(iter)) {
+        next(iter, data_block);
+        file_size -= sizeof(data_block);
+        size_t read_size = MIN(file_size, sizeof(data_block));
+        while (read_size > 0) {
+            struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+            memcpy(entry, data_block->data, sizeof(struct entry));
+            dir->entries[dir->num_entries++] = entry;
+            read_size -= sizeof(struct entry);
+        }        
     }
+    free(iter);
+    
+    // off_t read_size = 0; // 已读取的数据块大小
+    // int index = 0; // 索引级别
+    
+    // while (read_size < inode->st_size) {
+    //     if (index <= 3) {       
+    //         // 直接索引（index=0, 1, 2, 3）
+    //         // 读取数据块号并判断位图有无使用该数据块
+    //         short int data_block_no = inode->addr[index++];
+    //         if (!data_block_is_used(data_block_no)) {
+    //             continue;
+    //         }
+    //         struct data_block* data_block = malloc(sizeof(data_block));
+    //         read_data_block(data_block_no, data_block); // 读取对应数据块
+    //         size_t datablock_size = 0;
+    //         while (datablock_size < data_block->size) {
+    //             // 从数据块中取出目录项entry集合放到dir中
+    //             struct entry* entry = malloc(sizeof(struct entry));
+    //             memcpy(entry, data_block->data, sizeof(struct entry));
+    //             dir->entries[dir->num_entries++] = entry;
+    //             datablock_size += sizeof(struct entry);
+    //         }
+    //         read_size += data_block->size;
+    //         free(data_block);
+    //     } else if (index == 4) {
+    //         // 一级索引
+    //         // TODO inode多级索引实现
+    //         break;
+    //     }
+    // }
     return 0;
 }
 

@@ -11,6 +11,9 @@
 
 #include "sfs_ds.h"
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 /**
  * 分割路径
  * example: path="abc/ef/g" -> head="abc", tail="ef/g"
