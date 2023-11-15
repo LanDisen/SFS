@@ -66,6 +66,10 @@ int set_inode_bitmap_used(short int ino) {
     // inode号对应位置设为1
     uint8_t byte = 0 << col;
     inode_bitmap[row] |= byte;
+    // 写回磁盘
+    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fwrite(inode_bitmap, sizeof(inode_bitmap), 1, fs);
+    printf("[set_inode_bitmap_used] ino=%d\n", ino);
     return 0;
 }
 
@@ -81,6 +85,10 @@ int set_datablock_bitmap_used(short int data_block_no) {
     // 数据块号对应位置设为1
     uint8_t byte = 0 << col;
     data_block_bitmap[row] |= byte;
+    // 写回磁盘
+    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
+    fwrite(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
+    printf("[set_datablock_bitmap_used] datablock_no=%d\n", data_block_no);
     return 0;
 }
 
@@ -104,6 +112,7 @@ int get_free_ino(short int* ino) {
                 if (((byte >> j) & 1) == 0) {
                     // 有空闲inode
                     *ino = i * 8 + (7 - j);
+                    printf("[get_free_ino] alloc ino=%d\n", *ino);
                     return 0;
                 }
             }
@@ -135,6 +144,7 @@ int get_free_datablock_no(short int* datablock_no) {
                 if (((byte >> j) & 1) == 0) {
                     // 有空闲数据块
                     *datablock_no = i * 8 + (7 - j);
+                    printf("[get_free_datablock_no] alloc datablock_no=%d\n", *datablock_no);
                     return 0;
                 }
             }
@@ -148,6 +158,9 @@ int get_free_datablock_no(short int* datablock_no) {
 // 根据inode号读取inode
 int read_inode(short int ino, struct inode* inode) {
     printf("[read_inode] ino=%d\n", ino);
+    if (ino < 0) {
+        return -1;
+    }
     fseek(fs, (sb->first_inode + ino) * BLOCK_SIZE, SEEK_SET);
     fread(inode, sizeof(struct inode), 1, fs); // 读取inode数据
     // 读取成功
@@ -156,6 +169,10 @@ int read_inode(short int ino, struct inode* inode) {
 
 // 根据数据块号读取数据块
 int read_data_block(short int data_block_no, struct data_block* data_block) {
+    printf("[read_data_block] data_block_no=%d\n", data_block_no);
+    if (data_block_no < 0) {
+        return -1;
+    }
     fseek(fs, (sb->first_blk + data_block_no) * BLOCK_SIZE, SEEK_SET);
     fread(data_block, sizeof(struct data_block), 1, fs);
     // 读取成功
