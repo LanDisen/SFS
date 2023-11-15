@@ -64,7 +64,7 @@ int set_inode_bitmap_used(short int ino) {
     short int row = ino >> 3; // 位图的行
     short int col = ino % 8; // 位图的列（在0~7之间）
     // inode号对应位置设为1
-    uint8_t byte = 0 << col;
+    uint8_t byte = 1 << (7 - col);
     inode_bitmap[row] |= byte;
     // 写回磁盘
     fseek(fs, sb->first_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
@@ -83,7 +83,7 @@ int set_datablock_bitmap_used(short int data_block_no) {
     short int row = data_block_no >> 3; // 位图的行
     short int col = data_block_no % 8; // 位图的列（在0~7之间）
     // 数据块号对应位置设为1
-    uint8_t byte = 0 << col;
+    uint8_t byte = 1 << (7 - col);
     data_block_bitmap[row] |= byte;
     // 写回磁盘
     fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
