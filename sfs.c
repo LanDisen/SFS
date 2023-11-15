@@ -80,7 +80,7 @@ int set_inode_bitmap_used(short int ino) {
 // 设置数据块号对应bitmap为1表示已使用该数据块
 int set_datablock_bitmap_used(short int data_block_no) {
     // 读取数据块位图
-    uint8_t data_block_bitmap[4 * BLOCK_SIZE] = {0};
+    uint8_t data_block_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0};
     fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
     fread(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
     // 定位
@@ -90,6 +90,67 @@ int set_datablock_bitmap_used(short int data_block_no) {
     uint8_t byte = 0 << col;
     data_block_bitmap[row] |= byte;
     return 0;
+}
+
+/**
+ * 获取空闲的inode号
+ * 若没有空闲inode则*ino=-1
+*/
+int get_free_ino(short int* ino) {
+    // 读取bitmap
+    uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
+    fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fread(inode_bitmap, sizeof(inode_bitmap), 1, fs);
+    // inode bitmap占1个block（512B）
+    int num_inodes = NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE * 8;
+    int rows = num_inodes / 8;
+    for (int i=0; i<rows; i++) {
+        uint8_t byte = inode_bitmap[i];
+        if (byte != 0xFF) {
+            // byte不是全1，该行有空闲inode
+            for (int j=7; j>=0; j--) {
+                if (((byte >> j) & 1) == 0) {
+                    // 有空闲inode
+                    *ino = i * 8 + (7 - j);
+                    return 0;
+                }
+            }
+            
+        }
+    }
+    // 未找到空闲inode
+    *ino = -1;
+    return -1;
+}
+
+/**
+ * 获取空闲的数据块号
+ * 未找到空闲数据块则*datablock_no=-1
+*/
+int get_free_datablock_no(short int* datablock_no) {
+    // 读取bitmap
+    uint8_t data_block_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0};
+    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
+    fread(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
+    // 数据块bitmap占4个block（4*512B=2048B）
+    int num_datablocks = NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE * 8;
+    int rows = num_datablocks / 8;
+    for (int i=0; i<rows; i++) {
+        uint8_t byte = data_block_bitmap[i];
+        if (byte != 0xFF) {
+            // byte不是全1，该行有空闲数据块
+            for (int j=7; j>=0; j--) {
+                if (((byte >> j) & 1) == 0) {
+                    // 有空闲数据块
+                    *datablock_no = i * 8 + (7 - j);
+                    return 0;
+                }
+            }
+        }
+    }
+    // 未找到空闲数据块
+    *datablock_no = -1;
+    return -1;
 }
 
 // 根据inode号读取inode
@@ -154,7 +215,7 @@ int read_dir(struct inode* inode, struct dir* dir) {
             read_size += data_block->size;
         } else if (index == 4) {
             // 一级索引
-            // TODO
+            // TODO inode多级索引实现
             break;
         }
     }
@@ -224,6 +285,69 @@ int find_entry(const char* path, struct entry* entry) {
     free(path_copy);
     return -1;
 }
+
+/**
+ * 获得path的上一级目录entry
+ * example: path="abc/ef/g" -> 返回ef对应entry指针
+*/
+// int find_last_entry(const char* path, struct entry* entry) {
+//     printf("[find_last_entry] path=%s\n", path);
+//     if (path == NULL || strcmp(path, "") == 0) {
+//         printf("[find_last_entry] Error: the entry path should not be NULL or empty\n");
+//         return -1;
+//     }
+
+//     if (strcmp(path, "/") == 0) {
+//         // 根目录
+//         entry = root_entry;
+//         return 0;
+//     }
+
+//     struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
+//     struct entry* cur_entry = (struct entry*)malloc(sizeof(struct entry));
+//     struct entry* last_entry = (struct entry*)malloc(sizeof(struct entry)); // 上一级entry
+//     struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
+
+//     // 不能操作const的path参数，只能操作path_copy
+//     char* path_copy = (char*)malloc(sizeof(path));
+//     strcpy(path_copy, path);
+//     // 路径解析
+//     if (path_copy[0] == '/') {
+//         // 路径第一个字符为"/"则是从根目录开始遍历
+//         cur_entry = root_entry;
+//         strcpy(path_copy, path_copy + 1); // 去除path的第一个"/"字符
+//     } else {
+//         cur_entry = work_entry; // 工作目录开始遍历
+//     }
+    
+//     char* head = (char*)malloc(sizeof(path_copy));
+//     char* tail = (char*)malloc(sizeof(path_copy));
+//     split_path(path_copy, head, tail);
+
+//     short int cur_inode_no = cur_entry->inode;
+//     read_inode(cur_inode_no, cur_inode); // 获取inode
+//     read_dir(cur_inode, cur_dir);        // 根据inode获取对应dir
+//     // 遍历entry匹配文件名
+//     for (int i=0; i<cur_dir->num_entries; i++) {
+//         if (strcmp(cur_dir->entries[i]->name, head) == 0) {
+//             // 存在该目录，继续解析
+//             int ret = find_last_entry(tail, entry);
+//             free(head);
+//             free(tail);
+//             free(path_copy);
+//             return ret;
+//         }
+
+//     }
+//     printf("[find_entry] Error: the entry %s does not exist\n", path);
+//     free(head);
+//     free(tail);
+//     free(path_copy);
+//     return -1;
+
+
+//     return 0;
+// }
 
 // 根据文件路径获取其对应的inode
 int find_inode(const char* path, struct inode* inode) {
@@ -626,7 +750,7 @@ static int SFS_getattr(const char *path,
 static int SFS_readdir(const char* path, void* buf, 
                        fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi,
                        enum fuse_readdir_flags flags) {
-    // TODO
+    // TODO SFS_readdir 读取目录
     (void) offset;
     (void) fi;
    
@@ -642,25 +766,46 @@ static int SFS_readdir(const char* path, void* buf,
 
 // 创建目录
 static int SFS_mkdir(const char* path, mode_t mode) {
-    // TODO
+    // TODO SFS_mkdir 创建目录
+    (void) mode;
+    struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
+    char* parent_path = (char*)malloc(sizeof(path));
+    get_parent_path(path, parent_path); // 获得上一级路径
+    find_entry(parent_path, parent_entry); // 获得上一级entry（需要保证是目录文件类型）
+    if (parent_entry->type != DIR_TYPE) {
+        // 需要保证上一级是目录文件类型
+        printf("[SFS_mkdir] Error: parent entry is not DIR type\n");
+        free(parent_entry);
+        free(parent_path);
+        return -1;
+    }
+    // 创建新的entry作为目录文件
+    struct entry* new_entry = (struct entry*)malloc(sizeof(struct entry));
+    char file_name[MAX_FILE_NAME];
+    get_file_name(path, file_name);
+    strcpy(new_entry->name, file_name);
+
+
+
+
     return 0;
 }
 
 // 删除目录
 static int SFS_rmdir(const char* path) {
-    // TODO
+    // TODO SFS_rmdir 删除目录
     return 0;
 }
 
 // 创建文件
 static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
-    // TODO
+    // TODO SFS_mknod 创建文件
     return 0;
 }
 
 // 删除文件
 static int SFS_unlink(const char* path) {
-    // TODO
+    // TODO SFS_unlink 删除文件
     return 0;
 }
 
@@ -680,7 +825,7 @@ static int SFS_open(const char* path, struct fuse_file_info* fi) {
 
     // // 已找到inode，将其存储在fi->fh中，以便后续操作使用
     // fi->fh = (uintptr_t)inode;
-    // TODO
+    // TODO SFS_open 打开文件
 
     return 0;
 }
@@ -688,7 +833,7 @@ static int SFS_open(const char* path, struct fuse_file_info* fi) {
 // 关闭文件
 static int SFS_release(const char* path, struct fuse_file_info* fi) {
     // 在这里关闭文件
-    // TODO
+    // TODO SFS_release 关闭文件
     return 0;
 }
 
