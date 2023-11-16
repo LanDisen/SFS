@@ -18,6 +18,7 @@
 
 // SFS全局变量
 // 文件系统载体文件路径，作为该文件系统的根目录
+// 虚拟磁盘一行16byte，一个数据块有32行
 char* fs_img = "/home/ubuntu/code/SFS/sfs.img";
 FILE* fs;              // 文件系统载体文件
 struct sb* sb;         // 超级块作为SFS文件系统的全局变量
@@ -27,14 +28,19 @@ struct entry* work_entry;  // 工作目录
 /*
  * 超级块（super block），用于描述整个文件系统
  * 超级块大小为72字节（9个long），其占用1个磁盘块
+ * 虚拟磁盘（sfs.img）
+ * inode bitmap: 0x200
+ * data bitmap:  0x400
+ * inode area:   0x
+ * data area:    0x200C00
 */
 struct sb {
-    long fs_size;                  // 文件系统的大小，以块为单位（16*1024）
+    long fs_size;                  // 文件系统的大小，以块为单位（16*1024=16384块）
     long first_blk;                // 数据区的第一块块号，根目录也放在此（4102）
     long datasize;                 // 数据区大小，以块为单位（4*512*8） 
     long first_inode;              // inode区起始块号（6）
     long inode_area_size;          // inode区大小，以块为单位（512*8）
-    long first_blk_of_inodebitmap; // inode位图区起始块号（1
+    long first_blk_of_inodebitmap; // inode位图区起始块号（1）
     long inodebitmap_size;         // inode位图区大小，以块为单位（1）
     long first_blk_of_databitmap;  // 数据块位图起始块号（2）
     long databitmap_size;          // 数据块位图大小，以块为单位（4）
@@ -72,7 +78,7 @@ struct entry {
     char name[MAX_FILE_NAME];           // 文件名，8字节
     char extension[MAX_FILE_EXTENSION]; // 文件扩展名，3字节
     char type; // 目录项类型（0未使用，1普通文件，2目录文件）
-    short int inode;                    // inode号，2字节（用于获取文件数据）
+    short int inode;                    // inode号，2字节
     // 备用3字节，其中1字节用于判断目录项类型 
     char reserved[2];            
 };
