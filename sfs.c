@@ -41,48 +41,47 @@
 /**
  * 在父目录parent_entry下添加新的entry
 */
-int add_entry(struct entry* parent_entry, struct entry* new_entry) {
-    // if (parent_entry->inode == -1) {
-    //     // 空目录，分配新的inode存放entry
-    //     short int* ino = (short int*)malloc(sizeof(short int));
-    //     get_free_ino(ino);
-    //     if (*ino == -1) {
-    //         // 没有空闲inode
-    //         printf("[add_entry] Error: there is no free inode");
-    //         free(ino);
-    //         return -1;
-    //     }
-    //     // 初始化ino
-    //     parent_entry->inode = *ino;
-    //     free(ino);
-    // }
-    // 读取父目录指向的inode，将new_entry添加进去
-    struct inode* inode = (struct inode*)malloc(sizeof(inode));
-    read_inode(parent_entry->inode, inode);
-    struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
-    //short int* last_datablock_no = (short int*)malloc(sizeof(short int));
-    get_last_datablock(inode, last_datablock); // 获取最后一个可用的数据块
-    // struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
-    // read_data_block(*last_datablock_no, last_datablock);
-    // 将new_entry写入该数据块
-    off_t used_size = inode->st_size % BLOCK_SIZE; // 该数据块前面已使用的空间大小
-    memcpy(last_datablock + used_size, new_entry, sizeof(struct entry));
-    inode->st_size += sizeof(struct entry); // 修改目录大小
-    // 写回磁盘
-    // write_data_block(*last_datablock_no, last_datablock);
+// int add_entry(struct entry* parent_entry, struct entry* new_entry) {
+//     // if (parent_entry->inode == -1) {
+//     //     // 空目录，分配新的inode存放entry
+//     //     short int* ino = (short int*)malloc(sizeof(short int));
+//     //     get_free_ino(ino);
+//     //     if (*ino == -1) {
+//     //         // 没有空闲inode
+//     //         printf("[add_entry] Error: there is no free inode");
+//     //         free(ino);
+//     //         return -1;
+//     //     }
+//     //     // 初始化ino
+//     //     parent_entry->inode = *ino;
+//     //     free(ino);
+//     // }
+//     // 读取父目录指向的inode，将new_entry添加进去
+//     struct inode* inode = (struct inode*)malloc(sizeof(inode));
+//     read_inode(parent_entry->inode, inode);
+//     struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
+//     //short int* last_datablock_no = (short int*)malloc(sizeof(short int));
+//     get_last_datablock(inode, last_datablock); // 获取最后一个可用的数据块
+//     // struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
+//     // read_data_block(*last_datablock_no, last_datablock);
+//     // 将new_entry写入该数据块
+//     off_t used_size = inode->st_size % BLOCK_SIZE; // 该数据块前面已使用的空间大小
+//     memcpy(last_datablock + used_size, new_entry, sizeof(struct entry));
+//     inode->st_size += sizeof(struct entry); // 修改目录大小
+//     // 写回磁盘
+//     // write_data_block(*last_datablock_no, last_datablock);
 
-    free(inode);
-    inode = NULL;
-    // free(last_datablock_no);
-    // last_datablock_no = NULL;
-    free(last_datablock);
-    last_datablock = NULL;
-    return 0;
-}
+//     free(inode);
+//     inode = NULL;
+//     // free(last_datablock_no);
+//     // last_datablock_no = NULL;
+//     free(last_datablock);
+//     last_datablock = NULL;
+//     return 0;
+// }
 
 // 根据inode号获取目录（包括子目录和文件）
 int read_dir(struct inode* inode, struct dir* dir) {
-    // TODO 实现read_dir
     printf("[read_dir] ino=%d\n", inode->st_ino);
     dir->num_entries = 0;
     int file_size = inode->st_size;
@@ -93,8 +92,6 @@ int read_dir(struct inode* inode, struct dir* dir) {
     // short int* datablock_no = (short int*)malloc(sizeof(short int));
     while (has_next(iter) && file_size > 0) {
         next(iter, data_block);
-        // struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
-        // read_data_block(datablock_no, data_block);
         // 若读到最后一块则read_size会小于512，否则为512
         int read_size = MIN(file_size, sizeof(struct data_block));
         file_size -= sizeof(data_block);
@@ -103,12 +100,11 @@ int read_dir(struct inode* inode, struct dir* dir) {
             struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
             memcpy(entry, data_block->data + dir->num_entries*sizeof(struct entry), sizeof(struct entry));
             dir->entries[dir->num_entries++] = entry;
-            //printf("name=%s\n", entry->name); // success
             read_size -= sizeof(struct entry);
         }
     }
     free(iter);
-    
+    iter = NULL;
     return 0;
 }
 
@@ -132,11 +128,6 @@ int find_entry(const char* path, struct entry* entry) {
     if (strcmp(path, "/") == 0) {
         // 根目录
         *entry = *root_entry;
-        // struct data_block* root_datablock = (struct data_block*)malloc(sizeof(struct data_block));
-        // read_data_block(0, root_datablock);
-        // memcpy(entry, root_datablock, sizeof(struct entry));
-        // free(root_datablock);
-        // root_datablock = NULL;
         return 0;
     }
 
@@ -182,9 +173,9 @@ int find_entry(const char* path, struct entry* entry) {
         }
     }
     printf("[find_entry] Error: the entry %s does not exist\n", path);
-    // free(head);
-    // free(tail);
-    // free(path_copy);
+    free(head);
+    free(tail);
+    free(path_copy);
     return -1;
 }
 
@@ -326,7 +317,6 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
         // 将超级块数据写到到文件系统载体文件
         fseek(fs, 0, SEEK_SET);
         fwrite(sb, sizeof(struct sb), 1, fs);
-        // fwrite(sb, BLOCK_SIZE, 1, fs);// 超级块占据一个BLOCK
 
         // 将根目录的相关信息填写到inode区的第一个inode
         struct inode* root_inode = (struct inode*)malloc(sizeof(struct inode));
@@ -338,15 +328,12 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
         root_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
         root_inode->st_size  = 0; // 初始大小为空
 
-        // 初始化根目录inode和数据块（写的时候自动设置bitmap）
+        // 初始化根目录inode（写入磁盘的时候自动设置bitmap已使用）
         write_inode(0, root_inode); // 第一个inode已分配（ino=0）
-        // write_data_block(0, root_datablock);
 
         // 完成文件系统初始化，关闭文件系统载体文件 
         free(root_inode);
-        // free(root_datablock);
         root_inode = NULL;
-        // root_datablock = NULL;
 
         // FIXME 测试ls
         test();
@@ -377,14 +364,10 @@ static int SFS_getattr(const char *path,
     (void) fi;
     printf("[SFS_getattr] path=%s\n", path);
 
-    // struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
-    // find_inode(path, inode);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
-
 
     if (find_entry(path, entry) == -1) {
         printf("[SFS_getattr] Error: path %s is not existed\n", path);
-        //return -1; // operation not permitted
         return -ENOENT; // 没有该目录或文件
     }
     
@@ -417,7 +400,6 @@ static int SFS_getattr(const char *path,
 static int SFS_readdir(const char* path, void* buf, 
                        fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi,
                        enum fuse_readdir_flags flags) {
-    // TODO SFS_readdir 读取目录
     (void) fi;
     off_t cur = offset;
     printf("[SFS_readir] path=%s\n", path);
@@ -427,25 +409,19 @@ static int SFS_readdir(const char* path, void* buf,
         printf("[SFS_readir] Error: this path %s does not exist\n", path);
         return -1;
     }
-    // 存在该路径对应entry
 
+    // 存在该路径对应entry
     struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
     read_inode(entry->inode, inode);
     struct dir* dir = (struct dir*)malloc(sizeof(struct dir));
     read_dir(inode, dir);
-    printf("num_entries=%ld\n", dir->num_entries);
-    if (cur < dir->num_entries) {
-        printf("[SFS_readdir] name=%s\n", dir->entries[cur]->name);
-        filler(buf, dir->entries[cur]->name, NULL, cur, 0);
-        cur += 1;
-    }
-    
-    // if (strcmp(path, "/") != 0) {
-    //     return -ENOENT; // 目录不存在
-    // }
 
-    // filler(buf, ".", NULL, 0, 0);
-    // filler(buf, "..", NULL, 0, 0);
+    if (cur < dir->num_entries) {
+        char fname[MAX_FILE_NAME];
+        strcpy(fname, dir->entries[cur]->name);
+        printf("[SFS_readdir] name=%s\n", fname);
+        filler(buf, fname, NULL, ++cur, 0);
+    }
 
     return 0;
 }
