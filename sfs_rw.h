@@ -163,7 +163,6 @@ int read_inode(short int ino, struct inode* inode) {
     }
     fseek(fs, (sb->first_inode + ino) * BLOCK_SIZE, SEEK_SET);
     fread(inode, sizeof(struct inode), 1, fs); // 读取inode数据
-    fseek(fs, 0, SEEK_SET);
     // 读取成功
     return 0;
 }
@@ -176,19 +175,15 @@ int read_data_block(short int data_block_no, struct data_block* data_block) {
     }
     fseek(fs, (sb->first_blk + data_block_no) * BLOCK_SIZE, SEEK_SET);
     fread(data_block, sizeof(struct data_block), 1, fs);
-    fseek(fs, 0, SEEK_SET);
     // 读取成功
     return 0;
 }
 
 // 根据inode号写入inode
 int write_inode(short int ino, struct inode* inode) {
+    printf("[write_inode] ino=%d\n", ino);
     fseek(fs, (sb->first_inode + ino) * BLOCK_SIZE, SEEK_SET);
     fwrite(inode, sizeof(struct inode), 1, fs);
-    fflush(fs);
-    printf("[write_inode] ino=%d\n", ino);
-    // 修改bitmap为已使用
-    set_inode_bitmap_used(ino);
     return 0;
 }
 
@@ -197,23 +192,6 @@ int write_data_block(short int data_block_no, struct data_block* data_block) {
     printf("[write_data_block] datablock_no=%d\n", data_block_no);
     fseek(fs, (sb->first_blk + data_block_no) * BLOCK_SIZE, SEEK_SET);
     fwrite(data_block, sizeof(struct data_block), 1, fs);
-    fflush(fs);
-    // 修改bitmap为已使用
-    set_datablock_bitmap_used(data_block_no);
-
-    struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
-    read_data_block(data_block_no, datablock);
-    struct entry* a = (struct entry*)malloc(sizeof(struct entry));
-    struct entry* b = (struct entry*)malloc(sizeof(struct entry));
-    memcpy(a, datablock, sizeof(struct entry));
-    memcpy(b, datablock + sizeof(struct entry), sizeof(struct entry));
-    printf("%s\n", a->name);
-    printf("%s\n", b->name);
-
-    memcpy(a, data_block, sizeof(struct entry));
-    memcpy(b, data_block + sizeof(struct entry), sizeof(struct entry));
-    printf("%s\n", a->name);
-    printf("%s\n", b->name);
     return 0;
 }
 
@@ -221,7 +199,7 @@ int write_data_block(short int data_block_no, struct data_block* data_block) {
  * 为inode分配一个新的数据块
 */
 int alloc_datablock(struct inode* inode, short int* datablock_no) {
-    // TODO 实现alloc_datablock
+    // TODO 实现多级alloc_datablock
     get_free_datablock_no(datablock_no);
     if (inode->st_size == 0) {
         inode->addr[0] = *datablock_no;

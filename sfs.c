@@ -17,69 +17,6 @@
 // **************************************************************************************
 // 以下是辅助函数
 
-// int read_entry(struct inode* inode, struct entry* entry) {
-//     off_t read_size = 0; // 已读取的数据块大小
-//     int index = 0; // 索引级别
-//     while (read_size < inode->st_size) {
-//         if (index <= 3) { 
-//             直接索引
-//             short int data_block_no = inode->addr[index++];
-//             if (!data_block_is_used(data_block_no)) {
-//                 continue;
-//             }
-//             struct data_block* data_block = malloc(sizeof(data_block));
-//             read_data_block(data_block_no, data_block); // 读取对应数据块
-//             将数据块中存放的entry内容拷贝出来
-//             memcpy(entry, data_block->data, sizeof(entry));
-//             free(data_block);
-//             break;
-//         }
-//     }
-//     return 0;
-// }
-
-/**
- * 在父目录parent_entry下添加新的entry
-*/
-// int add_entry(struct entry* parent_entry, struct entry* new_entry) {
-//     // if (parent_entry->inode == -1) {
-//     //     // 空目录，分配新的inode存放entry
-//     //     short int* ino = (short int*)malloc(sizeof(short int));
-//     //     get_free_ino(ino);
-//     //     if (*ino == -1) {
-//     //         // 没有空闲inode
-//     //         printf("[add_entry] Error: there is no free inode");
-//     //         free(ino);
-//     //         return -1;
-//     //     }
-//     //     // 初始化ino
-//     //     parent_entry->inode = *ino;
-//     //     free(ino);
-//     // }
-//     // 读取父目录指向的inode，将new_entry添加进去
-//     struct inode* inode = (struct inode*)malloc(sizeof(inode));
-//     read_inode(parent_entry->inode, inode);
-//     struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
-//     //short int* last_datablock_no = (short int*)malloc(sizeof(short int));
-//     get_last_datablock(inode, last_datablock); // 获取最后一个可用的数据块
-//     // struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
-//     // read_data_block(*last_datablock_no, last_datablock);
-//     // 将new_entry写入该数据块
-//     off_t used_size = inode->st_size % BLOCK_SIZE; // 该数据块前面已使用的空间大小
-//     memcpy(last_datablock + used_size, new_entry, sizeof(struct entry));
-//     inode->st_size += sizeof(struct entry); // 修改目录大小
-//     // 写回磁盘
-//     // write_data_block(*last_datablock_no, last_datablock);
-
-//     free(inode);
-//     inode = NULL;
-//     // free(last_datablock_no);
-//     // last_datablock_no = NULL;
-//     free(last_datablock);
-//     last_datablock = NULL;
-//     return 0;
-// }
-
 // 根据inode号获取目录（包括子目录和文件）
 int read_dir(struct inode* inode, struct dir* dir) {
     printf("[read_dir] ino=%d\n", inode->st_ino);
@@ -89,7 +26,6 @@ int read_dir(struct inode* inode, struct dir* dir) {
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, inode);
     struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
-    // short int* datablock_no = (short int*)malloc(sizeof(short int));
     while (has_next(iter) && file_size > 0) {
 
         next(iter, data_block);
@@ -212,6 +148,7 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
         memcpy(datablock, entry, sizeof(struct entry));
         // 写回磁盘
         write_data_block(*datablock_no, datablock);
+        set_datablock_bitmap_used(*datablock_no);
         free(datablock_no);
         datablock_no = NULL;
     } else {
@@ -374,8 +311,9 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
         root_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
         root_inode->st_size  = 0; // 初始大小为空
 
-        // 初始化根目录inode（写入磁盘的时候自动设置bitmap已使用）
-        write_inode(0, root_inode); // 第一个inode已分配（ino=0）
+        // 初始化根目录inode
+        write_inode(0, root_inode); 
+        set_inode_bitmap_used(0); // 第一个inode已分配（ino=0）
 
         // 完成文件系统初始化，关闭文件系统载体文件 
         free(root_inode);
@@ -508,7 +446,8 @@ static int SFS_mkdir(const char* path, mode_t mode) {
     struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
     new_inode(inode, *ino, DIR_TYPE);
     // 将该inode写入虚拟磁盘
-    write_inode(*ino, inode); // 自动设置bitmap
+    write_inode(*ino, inode); 
+    set_inode_bitmap_used(*ino);
 
     // 创建新的entry作为目录文件
     char file_name[MAX_FILE_NAME];
