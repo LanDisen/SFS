@@ -84,6 +84,7 @@ void get_parent_path(const char* path, char* parent) {
         return;
     }
     strncpy(parent, path, k);
+    parent[k] = '\0';
 }
 
 /**
