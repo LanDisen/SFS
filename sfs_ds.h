@@ -108,7 +108,33 @@ struct inode_iter {
     int index;        // 当前索引下标
 };
 
-
-#endif
 // 以上是SFS相关数据结构
 // ***************************************************************************************
+// 以下是SFS数据结构（inode、entry等）初始化函数
+
+void new_inode(struct inode* inode, short int ino, char type) {
+    inode->st_ino = ino;
+    if (type == DIR_TYPE) {
+        inode->st_mode = __S_IFDIR | 0755; // 目录文件;
+    } else if (type == FILE_TYPE) {
+        inode->st_mode = __S_IFREG | 0444; // 普通文件
+    }
+    inode->st_nlink = 1; // 链接数
+    inode->st_uid = 0;   // 用户id
+    inode->st_gid = 0;   // 用户组id
+    inode->st_size = 0;  // 文件大小
+    // inode->st_atim = time(NULL); // 上次访问时间（time of last access）
+}
+
+void new_entry(struct entry* entry, char* name, char* ext, char type, short int ino) {
+    entry->type = type;
+    entry->inode = ino;
+    strcpy(entry->name, name);
+    strcpy(entry->extension, ext);
+    if (type == DIR_TYPE) {
+        strcpy(entry->extension, "");
+    }
+}
+
+// 以上是SFS数据结构（inode、entry等）初始化函数
+#endif
