@@ -85,7 +85,7 @@ int read_dir(struct inode* inode, struct dir* dir) {
     printf("[read_dir] ino=%d\n", inode->st_ino);
     dir->num_entries = 0;
     int file_size = inode->st_size;
-    // rintf("inode size=%d\n", file_size);
+    printf("inode size=%d\n", file_size);
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, inode);
     struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
@@ -193,6 +193,7 @@ int find_entry(const char* path, struct entry* entry) {
  * 在父目录下添加新的子entry（目录或文件）
 */
 void add_entry(struct inode* parent_inode, struct entry* entry) {
+    printf("[add_entry] entry->name=%s\n", entry->name);
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, parent_inode);
     struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
@@ -214,8 +215,7 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
         free(datablock_no);
         datablock_no = NULL;
     } else {
-        // 数据块未满，可继续写入
-        memcpy(datablock + used_size, entry, sizeof(struct entry));
+        memcpy(datablock->data + used_size, entry, sizeof(struct entry));
         // 写回磁盘
         write_data_block(iter->datablock_no, datablock);
     }
@@ -314,7 +314,7 @@ int find_inode(const char* path, struct inode* inode) {
 */
 static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
     // 8M大小的磁盘文件映像路径，该文件作为SFS文件系统的载体
-    fs = fopen(fs_img, "rb+");
+    fs = fopen(fs_img, "wb+");
     if (fs == NULL) {
         // 检查映像文件路径
         perror("[SFS_init] Error: failed to open the file system image");
@@ -520,7 +520,6 @@ static int SFS_mkdir(const char* path, mode_t mode) {
     read_inode(parent_entry->inode, parent_inode);
     //printf("[SFS_mkdir] add entry name=%s\n", entry->name);
     add_entry(parent_inode, entry);
-    // add_entry(parent_entry, new_entry);
 
     free(ino);
     free(inode);
