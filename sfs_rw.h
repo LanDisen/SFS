@@ -199,12 +199,41 @@ int write_data_block(short int data_block_no, struct data_block* data_block) {
     return 0;
 }
 
+/**
+ * 为inode分配一个新的数据块
+*/
+int alloc_datablock(struct inode* inode, short int* datablock_no) {
+    // TODO 实现alloc_datablock
+    get_free_datablock_no(datablock_no);
+    if (inode->st_size == 0) {
+        inode->addr[0] = *datablock_no;
+        set_datablock_bitmap_used(*datablock_no);
+        return 0;
+    }
+    int index = 0; // 索引级别
+    while (index <= 6) {
+        if (index <= 3) {
+            // 直接索引
+            if (!data_block_is_used(inode->addr[index])) {
+                inode->addr[index] = *datablock_no;
+                set_datablock_bitmap_used(*datablock_no);
+                return 0;
+            }
+        } else if (index == 4) {
+            // 一级间接索引
+        }
+        index++;
+    }
+
+    return 0;
+}
+
 // 以上是bitmap、inode、数据块相关函数
 
 /*------------------------------------------------*/
 /* inode迭代器相关函数 */
 int has_next(struct inode_iter* iter) {
-    if (iter->read_size >= iter->inode->st_size || iter->index > 6 || iter->datablock_no < 0) {
+    if (iter->read_size >= iter->inode->st_size || iter->index > 6) {
         // 超出间接索引级别，或者已读取完全部数据
         return 0;
     }
