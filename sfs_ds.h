@@ -103,9 +103,9 @@ struct data_block {
 */
 struct inode_iter {
     struct inode* inode;
-    size_t cur;       // 当前迭代位置
     size_t read_size; // 已读取数据块大小
     int index;        // 当前索引下标
+    short int datablock_no; // 当前迭代的数据块号
 };
 
 // 以上是SFS相关数据结构
@@ -115,7 +115,7 @@ struct inode_iter {
 void new_inode(struct inode* inode, short int ino, char type) {
     inode->st_ino = ino;
     if (type == DIR_TYPE) {
-        inode->st_mode = __S_IFDIR | 0755; // 目录文件;
+        inode->st_mode = __S_IFDIR | 0755; // 目录文件
     } else if (type == FILE_TYPE) {
         inode->st_mode = __S_IFREG | 0444; // 普通文件
     }
@@ -134,6 +134,13 @@ void new_entry(struct entry* entry, char* name, char* ext, char type, short int 
     if (type == DIR_TYPE) {
         strcpy(entry->extension, "");
     }
+}
+
+void new_inode_iter(struct inode_iter* iter, struct inode* inode) {
+    iter->inode = inode;
+    iter->read_size = 0;
+    iter->index = 0;
+    iter->datablock_no = -1; // 当前迭代的数据块号
 }
 
 // 以上是SFS数据结构（inode、entry等）初始化函数
