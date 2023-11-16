@@ -89,10 +89,14 @@ void get_parent_path(const char* path, char* parent) {
 /**
  * 获取路径最后的文件名
  * example: path="abc/de/fgh" -> file_name="fgh"
+ *          path="/a" -> file_name="a"
 */
 void get_file_name(const char* path, char* file_name) {
     char* path_copy = (char*)malloc(sizeof(path));
     strcpy(path_copy, path);
+    if (path_copy[0] == '/') {
+        strcpy(path_copy, path_copy + 1);
+    }
     char* head = (char*)malloc(sizeof(path));
     char* tail = (char*)malloc(sizeof(path));
     do {
