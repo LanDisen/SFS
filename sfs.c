@@ -42,32 +42,39 @@
  * 在父目录parent_entry下添加新的entry
 */
 int add_entry(struct entry* parent_entry, struct entry* new_entry) {
-    if (parent_entry->inode == -1) {
-        // 空目录，分配新的inode存放entry
-        short int* ino = (short int*)malloc(sizeof(short int));
-        get_free_ino(ino);
-        if (*ino == -1) {
-            // 没有空闲inode
-            printf("[add_entry] Error: there is no free inode");
-            free(ino);
-            return -1;
-        }
-        // 初始化ino
-        parent_entry->inode = *ino;
-        free(ino);
-    }
-    // 读取父目录inode，将new_entry添加进去
+    // if (parent_entry->inode == -1) {
+    //     // 空目录，分配新的inode存放entry
+    //     short int* ino = (short int*)malloc(sizeof(short int));
+    //     get_free_ino(ino);
+    //     if (*ino == -1) {
+    //         // 没有空闲inode
+    //         printf("[add_entry] Error: there is no free inode");
+    //         free(ino);
+    //         return -1;
+    //     }
+    //     // 初始化ino
+    //     parent_entry->inode = *ino;
+    //     free(ino);
+    // }
+    // 读取父目录指向的inode，将new_entry添加进去
     struct inode* inode = (struct inode*)malloc(sizeof(inode));
     read_inode(parent_entry->inode, inode);
     struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
-    get_last_datablock(inode, last_datablock);
+    //short int* last_datablock_no = (short int*)malloc(sizeof(short int));
+    get_last_datablock(inode, last_datablock); // 获取最后一个可用的数据块
+    // struct data_block* last_datablock = (struct data_block*)malloc(sizeof(struct data_block));
+    // read_data_block(*last_datablock_no, last_datablock);
     // 将new_entry写入该数据块
     off_t used_size = inode->st_size % BLOCK_SIZE; // 该数据块前面已使用的空间大小
     memcpy(last_datablock + used_size, new_entry, sizeof(struct entry));
     inode->st_size += sizeof(struct entry); // 修改目录大小
+    // 写回磁盘
+    // write_data_block(*last_datablock_no, last_datablock);
 
     free(inode);
     inode = NULL;
+    // free(last_datablock_no);
+    // last_datablock_no = NULL;
     free(last_datablock);
     last_datablock = NULL;
     return 0;
@@ -76,25 +83,32 @@ int add_entry(struct entry* parent_entry, struct entry* new_entry) {
 // 根据inode号获取目录（包括子目录和文件）
 int read_dir(struct inode* inode, struct dir* dir) {
     // TODO 实现read_dir
+    printf("[read_dir] ino=%d\n", inode->st_ino);
     dir->num_entries = 0;
-    off_t file_size = inode->st_size;
+    int file_size = inode->st_size;
 
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     init_inode_iter(iter, inode);
     struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
-    while (has_next(iter)) {
+    // short int* datablock_no = (short int*)malloc(sizeof(short int));
+    while (has_next(iter) && file_size > 0) {
         next(iter, data_block);
+        // struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
+        // read_data_block(datablock_no, data_block);
+        // 若读到最后一块则read_size会小于512，否则为512
+        int read_size = MIN(file_size, sizeof(struct data_block));
         file_size -= sizeof(data_block);
-        size_t read_size = MIN(file_size, sizeof(data_block));
+        
         while (read_size > 0) {
             struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
-            memcpy(entry, data_block->data, sizeof(struct entry));
+            memcpy(entry, data_block->data + dir->num_entries*sizeof(struct entry), sizeof(struct entry));
             dir->entries[dir->num_entries++] = entry;
+            //printf("name=%s\n", entry->name); // success
             read_size -= sizeof(struct entry);
-        }        
+        }
     }
     free(iter);
-
+    
     return 0;
 }
 
@@ -117,7 +131,12 @@ int find_entry(const char* path, struct entry* entry) {
 
     if (strcmp(path, "/") == 0) {
         // 根目录
-        entry = root_entry;
+        *entry = *root_entry;
+        // struct data_block* root_datablock = (struct data_block*)malloc(sizeof(struct data_block));
+        // read_data_block(0, root_datablock);
+        // memcpy(entry, root_datablock, sizeof(struct entry));
+        // free(root_datablock);
+        // root_datablock = NULL;
         return 0;
     }
 
@@ -147,8 +166,15 @@ int find_entry(const char* path, struct entry* entry) {
     // 遍历entry匹配文件名
     for (int i=0; i<cur_dir->num_entries; i++) {
         if (strcmp(cur_dir->entries[i]->name, head) == 0) {
-            // 存在该目录，继续解析
-            int ret = find_entry(tail, entry);
+            int ret;
+            if (strcmp(tail, "") == 0) {
+                // 解析结束
+                *entry = *(cur_dir->entries[i]);
+                ret = 0;
+            } else {
+                // 存在该目录，继续解析
+                ret = find_entry(tail, entry);
+            }
             free(head);
             free(tail);
             free(path_copy);
@@ -156,9 +182,9 @@ int find_entry(const char* path, struct entry* entry) {
         }
     }
     printf("[find_entry] Error: the entry %s does not exist\n", path);
-    free(head);
-    free(tail);
-    free(path_copy);
+    // free(head);
+    // free(tail);
+    // free(path_copy);
     return -1;
 }
 
@@ -240,251 +266,6 @@ int find_inode(const char* path, struct inode* inode) {
     return ret;
 }
 
-/***
-// 根据inode号读取对应目录（包括子目录和文件集合）
-struct dir* read_dir(struct inode* inode) {
-    // 需要提前确保该inode对应的文件类型是目录项
-    struct dir* dir = malloc(sizeof(struct dir));
-    dir->num_entries = 0;
-    // 读取该目录项inode的数据块，获得子目录和文件
-    off_t read_size = 0; // 已读取的数据块大小
-    int index = 0; // 读取到的addr索引
-    while (read_size < inode->st_size) {
-        if (index >= 7) break; // 仅支持三级索引（addr最大索引为6）
-        if (index == 4) {
-            // 一级间接索引块号
-            short int first_data_block_no = inode->addr[index++];
-            if (!data_block_is_used(first_data_block_no)) {
-                continue;
-            }
-            // 一级索引块
-            struct data_block* first_data_block = read_data_block(first_data_block_no); // 读取对应数据块
-            short int* data_block_no_arr = (short int*) first_data_block->data;
-            size_t first_offset = 0;
-            // 遍历一级间接索引块中的数据块号，访问数据块
-            while (first_offset < first_data_block->size) {
-                short int* data_block_no = malloc(sizeof(short int));
-                memcpy(data_block_no, data_block_no_arr, sizeof(short int));
-                data_block_no_arr += sizeof(short int);
-                first_offset += sizeof(short int);
-                if (!data_block_is_used(*data_block_no)) {
-                    continue;
-                }
-                struct data_block* data_block = read_data_block(*data_block_no);
-                // 一个块装的都是目录项
-                struct entry* entries = (struct entry*)data_block->data;
-                size_t offset = 0;
-                while (offset < data_block->size) {
-                    memcpy(dir->entries[dir->num_entries++], entries, sizeof(struct entry));
-                    entries += sizeof(struct entry);
-                    offset += sizeof(struct entry);
-                }
-                read_size += data_block->size;
-            }
-        } else if (index == 5) {
-            // 二级间接索引
-            short int second_data_block_no = inode->addr[index++];
-            if (!data_block_is_used(second_data_block_no)) {
-                continue;
-            }
-            // 二级索引块
-            struct data_block* second_data_block = read_data_block(second_data_block_no); // 读取对应数据块
-            // 二级间接块存放的是一级间接块号
-            short int* first_data_block_no_arr = (short int*) second_data_block->data;
-            size_t second_offset = 0;
-            while (second_offset < second_data_block->size) {
-                short int* first_data_block_no = malloc(sizeof(short int));
-                memcpy(first_data_block_no, first_data_block_no_arr, sizeof(short int));
-                first_data_block_no_arr += sizeof(short int);
-                second_offset += sizeof(short int);
-                if (!data_block_is_used(*first_data_block_no)) {
-                    continue;
-                }
-                struct data_block* first_data_block = read_data_block(*first_data_block_no); // 读取一级间接块
-                short int* data_block_no_arr = (short int*) first_data_block->data;
-                size_t first_offset = 0;
-                // 遍历一级间接索引块中的数据块号，访问数据块
-                while (first_offset < first_data_block->size) {
-                    short int* data_block_no = malloc(sizeof(short int));
-                    memcpy(data_block_no, data_block_no_arr, sizeof(short int));
-                    data_block_no_arr += sizeof(short int);
-                    first_offset += sizeof(short int);
-                    if (!data_block_is_used(*data_block_no)) {
-                        continue;
-                    }
-                    struct data_block* data_block = read_data_block(*data_block_no);
-                    // 一个块装的都是目录项
-                    struct entry* entries = (struct entry*)data_block->data;
-                    size_t offset = 0;
-                    while (offset < data_block->size) {
-                        memcpy(dir->entries[dir->num_entries++], entries, sizeof(struct entry));
-                        entries += sizeof(struct entry);
-                        offset += sizeof(struct entry);
-                    }
-                    read_size += data_block->size;
-                }
-            }
-        } else if (index == 6) {
-            // 三级间接索引
-            short int third_data_block_no = inode->addr[index++];
-            if (!data_block_is_used(third_data_block_no)) {
-                continue;
-            }
-            // 三级索引块
-            struct data_block* third_data_block = read_data_block(third_data_block_no); // 读取对应数据块
-            // 三级间接块存放的是二级间接块号
-            short int* second_data_block_no_arr = (short int*) third_data_block->data;
-            size_t third_offset = 0;
-            while (third_offset < third_data_block->size) {
-                // 二级间接索引
-                short int* second_data_block_no = malloc(sizeof(short int));
-                memcpy(second_data_block_no, second_data_block_no_arr, sizeof(short int));
-                second_data_block_no_arr += sizeof(short int);
-                third_offset += sizeof(short int);
-                if (!data_block_is_used(*second_data_block_no)) {
-                    continue;
-                }
-                // 二级索引块
-                struct data_block* second_data_block = read_data_block(*second_data_block_no); // 读取对应数据块
-                // 二级间接块存放的是一级间接块号
-                short int* first_data_block_no_arr = (short int*) second_data_block->data;
-                size_t second_offset = 0;
-                while (second_offset < second_data_block->size) {
-                    short int* first_data_block_no = malloc(sizeof(short int));
-                    memcpy(first_data_block_no, first_data_block_no_arr, sizeof(short int));
-                    first_data_block_no_arr += sizeof(short int);
-                    second_offset += sizeof(short int);
-                    if (!data_block_is_used(*first_data_block_no)) {
-                        continue;
-                    }
-                    struct data_block* first_data_block = read_data_block(*first_data_block_no); // 读取一级间接块
-                    short int* data_block_no_arr = (short int*) first_data_block->data;
-                    size_t first_offset = 0;
-                    // 遍历一级间接索引块中的数据块号，访问数据块
-                    while (first_offset < first_data_block->size) {
-                        short int* data_block_no = malloc(sizeof(short int));
-                        memcpy(data_block_no, data_block_no_arr, sizeof(short int));
-                        data_block_no_arr += sizeof(short int);
-                        first_offset += sizeof(short int);
-                        if (!data_block_is_used(*data_block_no)) {
-                            continue;
-                        }
-                        struct data_block* data_block = read_data_block(*data_block_no);
-                        // 一个块装的都是目录项
-                        struct entry* entries = (struct entry*)data_block->data;
-                        size_t offset = 0;
-                        while (offset < data_block->size) {
-                            memcpy(dir->entries[dir->num_entries++], entries, sizeof(struct entry));
-                            entries += sizeof(struct entry);
-                            offset += sizeof(struct entry);
-                        }
-                        read_size += data_block->size;
-                    }
-                }
-            }
-        } else {
-            // 直接索引（index=0, 1, 2, 3）
-            // 读取数据块号并判断位图有无使用该数据块
-            short int data_block_no = inode->addr[index++];
-            if (!data_block_is_used(data_block_no)) {
-                continue;
-            }
-            struct data_block* data_block = read_data_block(data_block_no); // 读取对应数据块
-            size_t datablock_size = 0;
-            while (datablock_size < data_block->size) {
-                // 从数据块中取出目录项entry集合放到dir中
-                struct entry* entry = malloc(sizeof(struct entry));
-                memcpy(entry, data_block->data, sizeof(struct entry));
-                dir->entries[dir->num_entries++] = entry;
-                datablock_size += sizeof(struct entry);
-            }
-            read_size += sizeof(data_block->size);
-        }
-    }
-    return dir;
-}
-
-// 根据文件路径获取其对应的inode
-struct inode* find_inode(const char* path) {
-    // 一个进程要打开“/etc/passwd”文件，内核解析该路径名时，发现“/”，这样就将根目录作为工作目录，
-    // 然后从该目录中（inode所包好的数据块中）查找etc，找到了匹配后得到了etc的inode号，
-    // 然后读取etc的内容，在其中查找passwd，找到之后就可以返回对应的inode
-    
-    // 文件路径解析
-    if (path == NULL || strcmp(path, "") == 0) {
-        return NULL;
-    }
-    struct dir* dir = malloc(sizeof(struct dir)); // 需要进行遍历的目录
-    // char file_name[MAX_FILE_NAME]; // 文件名（可能为目录项文件名）
-    // char file_extension[MAX_FILE_EXTENSION]; // 文件扩展名 
-    char path_copy[MAX_PATH_LEN]; // path参数的副本（需要操作路径参数，原参数为const）
-    strcpy(path_copy, path);
-    if (path_copy[0] == '/') {
-        // 路径第一个字符为"/"则是从根目录开始遍历
-        dir = root_dir;
-        strcpy(path_copy, path_copy + 1); // 去除path的第一个"/"字符
-    } else {
-        dir = work_dir;
-    }
-    // 逐级分解目录，获取最终文件
-    while (strstr(path, "/")) {
-        char temp[MAX_PATH_LEN];
-        // 由于strtok会修改原字符串，这里保存修改前的字符串
-        strcpy(temp, path_copy); 
-        strtok(path_copy, "/"); // 获得第一个"/"前的目录项名
-        // 截取第一个"/"后的字符串到path_copy
-        strncpy(path_copy, temp + strlen(path_copy) + 1, strlen(temp) - strlen(path_copy));
-        // 若path_copy不为空，此时temp为一个目录项
-        // 遍历每个目录项，若匹配文件名则获取相应的inode
-        for (int i=0; i<dir->num_entries; i++) {
-            if (strcmp(dir->entries[i]->name, temp) == 0) {
-                // 找到匹配的目录项名
-                if (dir->entries[i]->type != DIR_TYPE) {
-                    // dir需要是目录项
-                    return NULL;
-                }
-                short int ino = dir->entries[i]->inode; // 获取inode号
-                // 需要利用inode位图判断该inode是否使用
-                if (!inode_is_used(ino)) {
-                    // inode未使用则不存在该文件或目录
-                    return NULL;
-                }
-                // 找到该inode对应的位置，即该目录文件存在，继续访问下一级目录
-                struct inode* inode = read_inode(ino);
-                // TODO
-                dir = read_dir(inode); // 根据该目录项的inode读取完整目录
-
-                // // 读取该目录项inode的数据块，获得子目录和文件
-                // off_t read_size = 0; // 已读取的数据块大小
-                // int index = 0; // 读取到的addr索引
-                // dir->num_entries = 0;
-
-                // while (read_size < inode->st_size) {
-                //     if (index >= 7) break; // 仅支持三级索引
-                //     // 读取数据块号并判断位图有无使用该数据块
-                //     short int data_block_no = inode->addr[index++];
-                //     if (!data_block_is_used(data_block_no)) {
-                //         continue;
-                //     }
-                //     struct data_block* data_block = read_data_block(data_block_no); // 读取对应数据块
-                //     // 从数据块中取出目录项entry
-                //     // struct entry* entry = malloc(sizeof(struct entry));
-
-                //     read_size += sizeof(struct entry);
-                // }
-                break; // 已找到该目录项
-
-            }
-        }
-        // 
-    }
-
-    // 未找到文件路径对应的inode
-    return NULL;
-}
-
-***/
-
 // ************************************************************************************
 // 以下为fuse_operations需要实现的SFS回调函数
 
@@ -506,9 +287,16 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
 
     // 检查文件系统是否已经初始化，可以通过检查超级块的fs_size来实现
     sb = malloc(sizeof(struct sb));
-    root_entry = (struct entry*)malloc(sizeof(struct entry));
     fseek(fs, 0, SEEK_SET);              // 定位超级块位置
     fread(sb, sizeof(struct sb), 1, fs); // 读取超级块数据
+
+    // 初始化根目录属性
+    root_entry = (struct entry*)malloc(sizeof(struct entry));
+    strcpy(root_entry->name, "/");     // 根目录为"/"
+    strcpy(root_entry->extension, ""); // 目录扩展名为空字符串
+    root_entry->type = DIR_TYPE;       // 目录文件类型
+    root_entry->inode = 0;             // 根目录的inode号为0
+    work_entry = root_entry;           // 当前工作目录为根目录
 
     if (sb->fs_size > 0) {
         // 文件系统已初始化，无需再次初始化虚拟磁盘文件sfs.img
@@ -526,29 +314,19 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
         // 文件系统虚拟磁盘尚未初始化，进行初始化操作（格式化）
         // 首先填充超级块（超级块位于第0块）
         sb->fs_size = FS_SIZE / BLOCK_SIZE; // 文件系统大小，以块为单位，共16*1024块
-        sb->fisrt_blk_of_inodebitmap = 1; // inode位图的第一块块号
+        sb->first_blk_of_inodebitmap = 1; // inode位图的第一块块号
         sb->inodebitmap_size = NUM_INODE_BITMAP_BLOCK; // inode位图大小为1块（512B）
-        sb->first_blk_of_databitmap = sb->fisrt_blk_of_inodebitmap + sb->inodebitmap_size; // 数据块位图的第一块块号（第2块）
+        sb->first_blk_of_databitmap = sb->first_blk_of_inodebitmap + sb->inodebitmap_size; // 数据块位图的第一块块号（第2块）
         sb->databitmap_size = NUM_DATA_BITMAP_BLOCK; // 数据块位图大小为4块（4 * 512 = 2048 Byte）
         sb->first_inode = sb->first_blk_of_databitmap + sb->databitmap_size; // inode区的第一块块号（第6块）
         sb->inode_area_size = sb->inodebitmap_size * BLOCK_SIZE * 8; // inode区大小为512*8块，该文件系统最多有4k个文件
-        sb->first_blk = sb->first_inode + sb->inode_area_size; // 数据区的第一块块号（6 + 4096 = 4102），img: 0x200C00
+        sb->first_blk = sb->first_inode + sb->inode_area_size; // 数据区的第一块块号（6 + 4096 = 4102）
         sb->datasize = sb->databitmap_size * BLOCK_SIZE * 8; // 数据区大小为4*512*8块
 
         // 将超级块数据写到到文件系统载体文件
         fseek(fs, 0, SEEK_SET);
         fwrite(sb, sizeof(struct sb), 1, fs);
-
-        // 初始化inode位图和数据块位图
-        uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0}; // 1块inode位图，表示最多4k个文件
-        uint8_t data_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0}; // 4块数据块位图
-
-        // 初始化根目录属性
-        strcpy(root_entry->name, "/");     // 根目录为"/"
-        strcpy(root_entry->extension, ""); // 目录扩展名为空字符串
-        root_entry->type = DIR_TYPE;       // 目录文件类型
-        root_entry->inode = -1;            // 根目录的inode号为0
-        work_entry = root_entry;           // 当前工作目录为根目录
+        // fwrite(sb, BLOCK_SIZE, 1, fs);// 超级块占据一个BLOCK
 
         // 将根目录的相关信息填写到inode区的第一个inode
         struct inode* root_inode = (struct inode*)malloc(sizeof(struct inode));
@@ -560,32 +338,22 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
         root_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
         root_inode->st_size  = 0; // 初始大小为空
 
-        // 将根目录entry写入第一个数据块
-        struct data_block* root_datablock = (struct data_block*)malloc(sizeof(struct data_block));
-        memcpy(root_datablock, root_entry, sizeof(struct entry));
-
-        // 设置根目录inode位图的第一个字节的第一位为1，表示第一个inode已分配（根目录）
-        inode_bitmap[0] |= 0x80;
-
-        fseek(fs, sb->fisrt_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET); // 定位到inode位图区
-        fwrite(inode_bitmap, sizeof(inode_bitmap), 1, fs); // 写入inode位图数据
-
-        fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET); // 定位到数据块位图区
-        fwrite(data_bitmap, sizeof(data_bitmap), 1, fs); // 写入数据块位图数据
-
-        // 初始化根目录inode和数据块
-        write_inode(0, root_inode);
-        write_data_block(0, root_datablock);
+        // 初始化根目录inode和数据块（写的时候自动设置bitmap）
+        write_inode(0, root_inode); // 第一个inode已分配（ino=0）
+        // write_data_block(0, root_datablock);
 
         // 完成文件系统初始化，关闭文件系统载体文件 
         free(root_inode);
-        free(root_datablock);
+        // free(root_datablock);
         root_inode = NULL;
-        root_datablock = NULL;
+        // root_datablock = NULL;
+
+        // FIXME 测试ls
+        test();
     }
 
     // 检查超级块属性
-    printf("\tsuper block: first inode bitmap=%ld\n", sb->fisrt_blk_of_inodebitmap);
+    printf("\tsuper block: first inode bitmap=%ld\n", sb->first_blk_of_inodebitmap);
     printf("\tsuper block: inode bitmap size=%ld\n", sb->inodebitmap_size);
     printf("\tsuper block: first datablock bitmap=%ld\n", sb->first_blk_of_databitmap);
     printf("\tsuper block: datablock bitmap size=%ld\n", sb->databitmap_size);
@@ -609,14 +377,19 @@ static int SFS_getattr(const char *path,
     (void) fi;
     printf("[SFS_getattr] path=%s\n", path);
 
-    struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
+    // struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
     // find_inode(path, inode);
+    struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
 
-    if (find_inode(path, inode) == -1) {
+
+    if (find_entry(path, entry) == -1) {
         printf("[SFS_getattr] Error: path %s is not existed\n", path);
         //return -1; // operation not permitted
         return -ENOENT; // 没有该目录或文件
     }
+    
+    struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
+    read_inode(entry->inode, inode);
 
     // 根据inode赋值stbuf(struct stat)
     memset(stbuf, 0, sizeof(struct stat));
@@ -627,9 +400,12 @@ static int SFS_getattr(const char *path,
 	stbuf->st_gid = inode->st_gid;
 	stbuf->st_size = inode->st_size;
     stbuf->st_blksize = BLOCK_SIZE;
-    stbuf->st_blocks = 0; // FIXME
+    stbuf->st_blocks = 1; // FIXME
 
+    free(entry);
     free(inode);
+    entry = NULL;
+    inode = NULL;
 
     return 0;
 }
@@ -647,21 +423,23 @@ static int SFS_readdir(const char* path, void* buf,
     printf("[SFS_readir] path=%s\n", path);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     if (find_entry(path, entry) == -1) {
+        // 该目录没有对应entry
         printf("[SFS_readir] Error: this path %s does not exist\n", path);
         return -1;
     }
     // 存在该路径对应entry
-    short int ino = entry->inode;
 
     struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
-    read_inode(ino, inode);
+    read_inode(entry->inode, inode);
     struct dir* dir = (struct dir*)malloc(sizeof(struct dir));
     read_dir(inode, dir);
+    printf("num_entries=%ld\n", dir->num_entries);
     if (cur < dir->num_entries) {
+        printf("[SFS_readdir] name=%s\n", dir->entries[cur]->name);
         filler(buf, dir->entries[cur]->name, NULL, cur, 0);
         cur += 1;
     }
-
+    
     // if (strcmp(path, "/") != 0) {
     //     return -ENOENT; // 目录不存在
     // }
@@ -677,53 +455,66 @@ static int SFS_mkdir(const char* path, mode_t mode) {
     // TODO SFS_mkdir 创建目录
     printf("[SFS_mkdir] path=%s\n", path);
     (void) mode;
-    struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
-    char* parent_path = (char*)malloc(sizeof(path));
-    get_parent_path(path, parent_path); // 获得上一级路径
-    find_entry(parent_path, parent_entry); // 获得上一级entry（需要保证是目录文件类型）
-    if (parent_entry->type != DIR_TYPE) {
-        // 需要保证上一级是目录文件类型
-        printf("[SFS_mkdir] Error: parent entry is not DIR type\n");
-        free(parent_entry);
-        free(parent_path);
-        return -1;
-    }
-    // TODO 检查是否已存在
-    // return -EEXIST; // 文件已存在
-    // 寻找空闲inode
-    short int* ino = (short int*)malloc(sizeof(short int));
-    get_free_ino(ino);
-    if (*ino == -1) {
-        // 没有空闲inode
-        printf("[SFS_mkdir] Error: there is no free inode for new entry\n");
-        free(parent_entry);
-        free(parent_path);
-        free(ino);
-        return -1;
-    }
+    // struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
+    // char* parent_path = (char*)malloc(sizeof(path));
+    // // 获取path的上一级目录
+    // get_parent_path(path, parent_path); // 获得上一级路径
+    // find_entry(parent_path, parent_entry); // 获得上一级entry（需要保证是目录文件类型）
+    // if (parent_entry->type != DIR_TYPE) {
+    //     // 需要保证上一级是目录文件类型
+    //     printf("[SFS_mkdir] Error: parent entry is not DIR type\n");
+    //     free(parent_entry);
+    //     free(parent_path);
+    //     parent_entry = NULL;
+    //     parent_path = NULL;
+    //     return -1;
+    // }
+    // // TODO 检查所创建的目录名是否已存在
+    // // return -EEXIST; // 文件已存在
+    // // 寻找空闲inode
+    // short int* ino = (short int*)malloc(sizeof(short int));
+    // get_free_ino(ino);
+    // if (*ino == -1) {
+    //     // 没有空闲inode
+    //     printf("[SFS_mkdir] Error: there is no free inode for new entry\n");
+    //     free(parent_entry);
+    //     free(parent_path);
+    //     free(ino);
+    //     return -1;
+    // }
 
-    // 创建新的entry作为目录文件
-    struct entry* new_entry = (struct entry*)malloc(sizeof(struct entry));
-    // 创建新inode指向new_entry
-    struct inode* new_inode = (struct inode*)malloc(sizeof(struct inode));
-    new_inode->st_mode  = __S_IFDIR | 0755; // 目录文件
-    new_inode->st_ino = *ino;
-    new_inode->st_nlink = 2; // 链接引用数
-    new_inode->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
-    new_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
-    new_inode->st_size  = 0; // 初始大小为空
-    // 将该inode写入虚拟磁盘
-    set_inode_bitmap_used(*ino);
-    write_inode(*ino, new_inode);
+    // // 创建新的entry作为目录文件
+    // struct entry* new_entry = (struct entry*)malloc(sizeof(struct entry));
+    // // 创建新inode指向new_entry
+    // struct inode* new_inode = (struct inode*)malloc(sizeof(struct inode));
+    // new_inode->st_mode  = __S_IFDIR | 0755; // 目录文件
+    // new_inode->st_ino = *ino;
+    // new_inode->st_nlink = 1; // 链接引用数
+    // new_inode->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
+    // new_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
+    // new_inode->st_size  = 0; // 初始大小为空
+    // // 将该inode写入虚拟磁盘
+    // write_inode(*ino, new_inode); // 自动设置bitmap
+    // if (parent_entry->inode == -1) {
+    //     // 父目录为空，指向存放new_entry的inode
+    //     parent_entry->inode = *ino;
+    // }
 
+    // char file_name[MAX_FILE_NAME];
+    // get_file_name(path, file_name);
+    // strcpy(new_entry->name, file_name);
+    // strcpy(new_entry->extension, "");
+    // new_entry->type = DIR_TYPE;
+    // new_entry->inode = -1; // 目录下还没有内容
+    // add_entry(parent_entry, new_entry);
+    // // FIXME 创建了两个inode
 
-    char file_name[MAX_FILE_NAME];
-    get_file_name(path, file_name);
-    strcpy(new_entry->name, file_name);
-    strcpy(new_entry->extension, "");
-    new_entry->type = DIR_TYPE;
-    new_entry->inode = -1; // 目录下还没有内容
-    add_entry(parent_entry, new_entry);
+    // free(ino);
+    // free(new_entry);
+    // free(new_inode);
+    // ino = NULL;
+    // new_entry = NULL;
+    // new_inode = NULL;
 
     return 0;
 }
@@ -796,7 +587,7 @@ static int SFS_read(const char* path, char* buf, size_t size, off_t offset, stru
 
 // 写文件
 static int SFS_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-    // TODO
+    // TODO 写文件
     return 0;
 }
 
