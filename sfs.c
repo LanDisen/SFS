@@ -305,6 +305,7 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
         root_inode->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
         root_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
         root_inode->st_size  = 0; // 初始大小为空
+        // root_inode->st_atim  = 0;
 
         // 初始化根目录inode
         write_inode(0, root_inode); 
@@ -470,7 +471,6 @@ static int SFS_mkdir(const char* path, mode_t mode) {
 
 // 删除目录
 static int SFS_rmdir(const char* path) {
-    // TODO SFS_rmdir 删除目录
     printf("[SFS_rmdir] path=%s\n", path);
     if (strcmp(path, "/") == 0) {
         // 根目录无法删除
@@ -501,14 +501,76 @@ static int SFS_rmdir(const char* path) {
 }
 
 // 创建文件
+// touch要求不仅仅是创建文件，还要求可以修改文件的访问时间
 static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
     // TODO SFS_mknod 创建文件
+    printf("[SFS_mknod] path=%s\n", path);
+    (void) mode;
+    struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
+    char* parent_path = (char*)malloc(sizeof(path));
+    // 获取path的上一级目录
+    get_parent_path(path, parent_path); // 获得上一级路径
+    find_entry(parent_path, parent_entry); // 获得上一级entry（需要保证是目录文件类型）
+    if (parent_entry->type != DIR_TYPE) {
+        // 需要保证上一级是目录文件类型
+        printf("[SFS_mknod] Error: parent entry is not DIR type\n");
+        free(parent_entry);
+        free(parent_path);
+        parent_entry = NULL;
+        parent_path = NULL;
+        return -1;
+    }
+
+    // 寻找空闲inode
+    short int* ino = (short int*)malloc(sizeof(short int));
+    get_free_ino(ino);
+    if (*ino == -1) {
+        // 没有空闲inode
+        printf("[SFS_mknod] Error: there is no free inode for new entry\n");
+        free(parent_entry);
+        free(parent_path);
+        free(ino);
+        return -1;
+    }
+
+    // 创建新inode指向new_entry
+    struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
+    new_inode(inode, *ino, FILE_TYPE);
+    // 将该inode写入虚拟磁盘
+    write_inode(*ino, inode); 
+    set_inode_bitmap_used(*ino);
+
+    // 创建新的entry作为文件
+    char file_name[MAX_FILE_NAME];
+    get_file_name(path, file_name);
+    struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+    new_entry(entry, file_name, "", FILE_TYPE, *ino);
+
+    struct inode* parent_inode = (struct inode*)malloc(sizeof(struct inode));
+    read_inode(parent_entry->inode, parent_inode);
+    //printf("[SFS_mknod] add entry name=%s\n", entry->name);
+    add_entry(parent_inode, entry);
+
+    free(ino);
+    free(inode);
+    free(entry);
+    ino = NULL;
+    inode = NULL;
+    entry = NULL;
+    free(parent_path);
+    free(parent_entry);
+    free(parent_inode);
+    parent_path = NULL;
+    parent_entry = NULL;
+    parent_inode = NULL;
+
     return 0;
 }
 
 // 删除文件
 static int SFS_unlink(const char* path) {
     // TODO SFS_unlink 删除文件
+    SFS_rmdir(path);
     return 0;
 }
 
@@ -566,6 +628,13 @@ static int SFS_write(const char* path, const char* buf, size_t size, off_t offse
     return 0;
 }
 
+// 修改时间
+int SFS_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info *fi) {
+	(void) path;
+    (void) fi;
+	return 0;
+}
+
 
 // 定义文件系统支持的操作函数，并添加到该结构体中
 // fuse会在执行linux相关操作时执行我们所定义的文件操作函数
@@ -581,6 +650,7 @@ static struct fuse_operations SFS_operations = {
     .release = SFS_release, // 关闭文件
     .read    = SFS_read,    // 读文件
     .write   = SFS_write,   // 写文件
+    .utimens = SFS_utimens, // 修改时间（创建文件要求实现）
 };
 
 int main(int argc, char *argv[]) {
