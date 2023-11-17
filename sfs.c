@@ -569,8 +569,32 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
 
 // 删除文件
 static int SFS_unlink(const char* path) {
-    // TODO SFS_unlink 删除文件
-    SFS_rmdir(path);
+        printf("[SFS_unlink] path=%s\n", path);
+    if (strcmp(path, "/") == 0) {
+        // 根目录无法删除
+        printf("[SFS_unlink] fail to remove the root dir\n");
+        return -1;
+    }
+    struct entry* entry = (struct entry*)malloc(sizeof(struct entry)); // 待删除的entry
+    if (find_entry(path, entry) != 0) {
+        // 不存在该路径对应的entry
+        printf("[SFS_unlink] the path %s does not exist\n", path);
+        return -1;
+    }
+    // 找到了路径对应的entry
+    struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
+    char* parent_path = (char*)malloc(sizeof(path));
+    // 获取path的上一级目录
+    get_parent_path(path, parent_path); // 获得上一级路径
+    find_entry(parent_path, parent_entry); // 获得上一级entry
+    // 遍历parent_inode的数据块进行匹配删除
+    struct inode* parent_inode = (struct inode*)malloc(sizeof(struct inode));
+    read_inode(parent_entry->inode, parent_inode);
+    remove_entry(parent_inode, entry);
+
+    free(entry);
+    free(parent_entry);
+    free(parent_inode);
     return 0;
 }
 
