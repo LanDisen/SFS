@@ -1,8 +1,9 @@
 .vscode
-temp
-temp/*
+test
+test/*
 build
 build/*
 sfs.o
 sfs
 sfs.img
+*.sh
