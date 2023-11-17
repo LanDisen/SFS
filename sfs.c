@@ -36,9 +36,11 @@ int read_dir(struct inode* inode, struct dir* dir) {
         while (read_size > 0) {
             struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
             memcpy(entry, data_block->data + dir->num_entries*sizeof(struct entry), sizeof(struct entry));
-            dir->entries[dir->num_entries++] = entry;
-            // printf("entry name: %s\n", entry->name);
-            read_size -= sizeof(struct entry);
+            if (entry->type != UNUSED) {
+                dir->entries[dir->num_entries++] = entry;
+                // printf("entry name: %s\n", entry->name);
+                read_size -= sizeof(struct entry);
+            }
         }
     }
     free(data_block);
@@ -59,7 +61,6 @@ int read_dir(struct inode* inode, struct dir* dir) {
  *     (4) find ef's entry
 */
 int find_entry(const char* path, struct entry* entry) {
-    // TODO 待重构，多级目录有bug
     printf("[find_entry] path=%s\n", path);
     if (path == NULL || strcmp(path, "") == 0) {
         printf("[find_entry] Error: the entry path should not be NULL or empty\n");
@@ -90,8 +91,6 @@ int find_entry(const char* path, struct entry* entry) {
         read_inode(cur_entry->inode, cur_inode);
         read_dir(cur_inode, cur_dir);
         for (int i=0; i<cur_dir->num_entries; i++) {
-            // printf("head=%s\n", head);
-            // printf("cur_dir->name=%s\n", cur_dir->entries[i]->name);
             if (strcmp(cur_dir->entries[i]->name, head) == 0) {
                 // 子目录或文件路径匹配成功
                 *cur_entry = *(cur_dir->entries[i]);
@@ -141,7 +140,6 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
     // 此时datablock是parent_inode的最后一个数据块
     off_t used_size = parent_inode->st_size % BLOCK_SIZE;
     if (used_size == 0) {
-        // TODO 数据块已满需要开辟新的数据块
         printf("[add_entry] data block is full\n");
         short int* datablock_no = (short int*)malloc(sizeof(short int));
         alloc_datablock(parent_inode, datablock_no); // 分配一个未使用的数据块
@@ -165,81 +163,6 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
     datablock = NULL;
 }
 
-/**
- * 获得path的上一级目录entry
- * example: path="abc/ef/g" -> 返回ef对应entry指针
-*/
-// int find_last_entry(const char* path, struct entry* entry) {
-//     printf("[find_last_entry] path=%s\n", path);
-//     if (path == NULL || strcmp(path, "") == 0) {
-//         printf("[find_last_entry] Error: the entry path should not be NULL or empty\n");
-//         return -1;
-//     }
-
-//     if (strcmp(path, "/") == 0) {
-//         // 根目录
-//         entry = root_entry;
-//         return 0;
-//     }
-
-//     struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
-//     struct entry* cur_entry = (struct entry*)malloc(sizeof(struct entry));
-//     struct entry* last_entry = (struct entry*)malloc(sizeof(struct entry)); // 上一级entry
-//     struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
-
-//     // 不能操作const的path参数，只能操作path_copy
-//     char* path_copy = (char*)malloc(sizeof(path));
-//     strcpy(path_copy, path);
-//     // 路径解析
-//     if (path_copy[0] == '/') {
-//         // 路径第一个字符为"/"则是从根目录开始遍历
-//         cur_entry = root_entry;
-//         strcpy(path_copy, path_copy + 1); // 去除path的第一个"/"字符
-//     } else {
-//         cur_entry = work_entry; // 工作目录开始遍历
-//     }
-    
-//     char* head = (char*)malloc(sizeof(path_copy));
-//     char* tail = (char*)malloc(sizeof(path_copy));
-//     split_path(path_copy, head, tail);
-
-//     short int cur_inode_no = cur_entry->inode;
-//     read_inode(cur_inode_no, cur_inode); // 获取inode
-//     read_dir(cur_inode, cur_dir);        // 根据inode获取对应dir
-//     // 遍历entry匹配文件名
-//     for (int i=0; i<cur_dir->num_entries; i++) {
-//         if (strcmp(cur_dir->entries[i]->name, head) == 0) {
-//             // 存在该目录，继续解析
-//             int ret = find_last_entry(tail, entry);
-//             free(head);
-//             free(tail);
-//             free(path_copy);
-//             return ret;
-//         }
-
-//     }
-//     printf("[find_entry] Error: the entry %s does not exist\n", path);
-//     free(head);
-//     free(tail);
-//     free(path_copy);
-//     return -1;
-//     return 0;
-// }
-
-// 根据文件路径获取其对应的inode
-// int find_inode(const char* path, struct inode* inode) {
-//     printf("[find_inode] path=%s\n", path);
-//     struct entry* entry = malloc(sizeof(struct entry));
-//     int ret = -1;
-//     if (find_entry(path, entry) == 0) {
-//         存在该路径
-//         ret = read_inode(entry->inode, inode);
-//     } else {
-//         inode = NULL;
-//     }
-//     free(entry);
-//     return ret;
-// }
 
 // ************************************************************************************
 // 以下为fuse_operations需要实现的SFS回调函数
@@ -367,7 +290,7 @@ static int SFS_getattr(const char *path,
 	stbuf->st_gid = inode->st_gid;
 	stbuf->st_size = inode->st_size;
     stbuf->st_blksize = BLOCK_SIZE;
-    stbuf->st_blocks = 1; // FIXME
+    stbuf->st_blocks = 1; // FIXME st_blocks
 
     free(entry);
     free(inode);
@@ -412,14 +335,12 @@ static int SFS_readdir(const char* path, void* buf,
 
 // 创建目录
 static int SFS_mkdir(const char* path, mode_t mode) {
-    // TODO SFS_mkdir 创建目录
     printf("[SFS_mkdir] path=%s\n", path);
     (void) mode;
     struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
     char* parent_path = (char*)malloc(sizeof(path));
     // 获取path的上一级目录
     get_parent_path(path, parent_path); // 获得上一级路径
-    //printf("parent_path=%s\n", parent_path);
     find_entry(parent_path, parent_entry); // 获得上一级entry（需要保证是目录文件类型）
     if (parent_entry->type != DIR_TYPE) {
         // 需要保证上一级是目录文件类型
@@ -430,8 +351,7 @@ static int SFS_mkdir(const char* path, mode_t mode) {
         parent_path = NULL;
         return -1;
     }
-    // TODO 检查所创建的目录名是否已存在
-    // return -EEXIST; // 文件已存在
+
     // 寻找空闲inode
     short int* ino = (short int*)malloc(sizeof(short int));
     get_free_ino(ino);
@@ -480,6 +400,14 @@ static int SFS_mkdir(const char* path, mode_t mode) {
 // 删除目录
 static int SFS_rmdir(const char* path) {
     // TODO SFS_rmdir 删除目录
+    printf("[SFS_rmdir] path=%s\n", path);
+    if (strcmp(path, "/")) {
+        // 根目录无法删除
+        printf("[SFS_rmdir] fail to remove the root dir\n");
+        return -1;
+    }
+
+
     return 0;
 }
 
@@ -545,7 +473,7 @@ static int SFS_read(const char* path, char* buf, size_t size, off_t offset, stru
 
 // 写文件
 static int SFS_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-    // TODO 写文件
+    // TODO SFS_write 写文件
     return 0;
 }
 
