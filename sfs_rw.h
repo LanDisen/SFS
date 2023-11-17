@@ -238,6 +238,28 @@ int write_data_block(short int data_block_no, struct data_block* data_block) {
 }
 
 /**
+ * 判断一个数据块有无可用entry，有则返回1，没有则返回0
+*/
+int datablock_has_entry(short int datablock_no) {
+    struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
+    read_data_block(datablock_no, datablock);
+    int read_size = BLOCK_SIZE;
+    struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+    int k = 0; // 待读取的entry下标
+    while (read_size > 0) {
+        memcpy(entry, datablock->data + k*sizeof(struct entry), sizeof(struct entry));
+        if (entry->type != UNUSED) {
+            // 存在可用entry
+            return 1;
+        }
+        k++;
+        read_size -= sizeof(struct entry);
+    }
+    // 不存在可用entry
+    return 0;
+}
+
+/**
  * 为inode分配一个新的数据块
 */
 int alloc_datablock(struct inode* inode, short int* datablock_no) {
@@ -296,100 +318,5 @@ void next(struct inode_iter* iter, struct data_block* data_block) {
         // TODO 一级间接索引
     }
 }
-
-// 获取inode指向的最后一个还有空余空间的数据块，若最后一块满则分配一个新的数据块
-// 分配新的数据块后，不会修改inode的文件大小
-int get_last_datablock(struct inode* inode, struct data_block* data_block) {
-    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
-    new_inode_iter(iter, inode);
-    // struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
-    while (has_next(iter)) {
-        next(iter, data_block);
-    }
-    if (iter->read_size == inode->st_size) {
-        // 最后一个数据块已满，需要重新分配
-        short int* datablock_no = (short int*)malloc(sizeof(short int));
-        // 获取一个空闲数据块的快号
-        if (get_free_datablock_no(datablock_no) == -1) {
-            // 无空闲数据块
-            printf("[alloc_datablock] Error: there is no free datablock");
-            free(datablock_no);
-            datablock_no = NULL;
-            return -1;
-        }
-        // 获得了空闲的数据块
-        // set_datablock_bitmap_used(*datablock_no); // 设置数据块bitmap
-        read_data_block(*datablock_no, data_block);
-        inode->addr[iter->index] = *datablock_no;
-        free(datablock_no);
-        datablock_no = NULL;
-    }
-    // 最后一个数据块未满，此时datablock已经是最后一个
-    free(iter);
-    iter = NULL;
-    return 0;
-}
-
-// void test() {
-//     // 手动为根目录添加目录项
-//     printf("[test]\n");
-
-//     short int* ino_a = (short int*)malloc(sizeof(short int));
-//     short int* ino_b = (short int*)malloc(sizeof(short int));
-//     // get_free_ino(ino_a); // 1
-//     // get_free_ino(ino_b); // 2
-//     *ino_a = 1;
-//     *ino_b = 2;
-//     struct inode* inode_a = (struct inode*)malloc(sizeof(struct inode));
-//     struct inode* inode_b = (struct inode*)malloc(sizeof(struct inode));
-
-//     inode_a->st_mode  = __S_IFDIR | 0755; // 目录文件
-//     inode_a->st_ino   = *ino_a; // 根目录的inode号为0（第一个）
-//     inode_a->st_nlink = 1; // 链接引用数
-//     inode_a->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
-//     inode_a->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
-//     inode_a->st_size  = 0; // 初始大小为空
-
-//     inode_b->st_mode  = __S_IFDIR | 0755; // 目录文件
-//     inode_b->st_ino   = *ino_b; // 根目录的inode号为0（第一个）
-//     inode_b->st_nlink = 1; // 链接引用数
-//     inode_b->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
-//     inode_b->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
-//     inode_b->st_size  = 0; // 初始大小为空
-
-//     struct entry* a = (struct entry*)malloc(sizeof(struct entry));
-//     strcpy(a->name, "a");
-//     strcpy(a->extension, "");
-//     a->inode = *ino_a;
-//     a->type = DIR_TYPE;
-
-//     struct entry* b = (struct entry*)malloc(sizeof(struct entry));
-//     strcpy(b->name, "b");
-//     strcpy(b->extension, "");
-//     b->inode = *ino_b;
-//     b->type = DIR_TYPE;
-
-//     write_inode(*ino_a, inode_a);
-//     write_inode(*ino_b, inode_b);
-
-//     // 目录inode存放的是entry（子目录或文件）的inode号
-//     short int* datablock_no = (short int*)malloc((short int)); // root_entry的目录项存放的数据块
-//     // 初始根目录为空，新开一个数据块
-//     get_free_datablock_no(datablock_no); // 理论上应该是0
-//     struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
-//     read_data_block(*datablock_no, data_block);
-//     // a和b对应entry存入根目录inode指向数据块中
-//     memcpy(data_block->data, a, sizeof(struct entry));
-//     memcpy(data_block->data + sizeof(struct entry), b, sizeof(struct entry));
-//     write_data_block(*datablock_no, data_block); // 写回磁盘
-
-//     // 更新根目录inode记录的文件大小（两个目录项a和b）
-//     struct inode* root_inode = (struct inode*)malloc(sizeof(struct inode));
-//     root_inode->addr[0] = *datablock_no;
-//     read_inode(0, root_inode);
-//     root_inode->st_size += 2 * sizeof(struct entry);
-//     write_inode(0, root_inode); // 写回磁盘
-
-// }
 
 #endif
