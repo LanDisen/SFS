@@ -26,21 +26,19 @@ int read_dir(struct inode* inode, struct dir* dir) {
     new_inode_iter(iter, inode);
     struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
     while (has_next(iter) && inode_size > 0) {
-
         next(iter, data_block);
-        // 若读到最后一块则read_size会小于512，否则为512
-        int read_size = MIN(inode_size, sizeof(struct data_block));
-        inode_size -= sizeof(data_block);
-        // printf("read_size=%d\n", read_size);
-        
-        while (read_size > 0) {
+        int read_size = BLOCK_SIZE;
+        int k = 0; // 下一个待读取的entry下标（包括UNUSED类型的entry）
+        while (read_size > 0 && inode_size > 0) {
             struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
-            memcpy(entry, data_block->data + dir->num_entries*sizeof(struct entry), sizeof(struct entry));
+            memcpy(entry, data_block->data + k*sizeof(struct entry), sizeof(struct entry));
+            k++;
             if (entry->type != UNUSED) {
+                // 读取到的entry是已使用的才会加入dir（被删除的entry会被设置成UNUSED类型）
                 dir->entries[dir->num_entries++] = entry;
-                // printf("entry name: %s\n", entry->name);
-                read_size -= sizeof(struct entry);
+                inode_size -= sizeof(struct entry);
             }
+            read_size -= sizeof(struct entry);
         }
     }
     free(data_block);
@@ -127,6 +125,8 @@ int find_entry(const char* path, struct entry* entry) {
 
 /**
  * 在父目录下添加新的子entry（目录或文件）
+ * @param parent_inode 父目录的inode指针
+ * @param entry        待添加的entry指针
 */
 void add_entry(struct inode* parent_inode, struct entry* entry) {
     printf("[add_entry] entry->name=%s\n", entry->name);
@@ -161,6 +161,77 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
     free(datablock);
     iter = NULL;
     datablock = NULL;
+}
+
+/**
+ * 在父目录下删除entry（目录或文件）
+ * @param parent_inode 父目录的inode指针
+ * @param entry        待删除的entry指针
+*/
+int remove_entry(struct inode* parent_inode, struct entry* entry) {
+    // TODO 实现remove_entry
+    // 这里暂时保证待删除的参数entry一定存在
+    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
+    new_inode_iter(iter, parent_inode);
+    
+    struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
+    int inode_size = parent_inode->st_size;
+    struct entry* e = (struct entry*)malloc(sizeof(struct entry));
+    // 遍历parent_inode数据块
+    while (has_next(iter) && inode_size > 0) {
+        next(iter, datablock);
+        // 匹配待删除的entry
+        // FIXME read_size的计算有误，不一定每个数据块都是满的
+        int read_size = BLOCK_SIZE; 
+        int k = 0; // 从数据块中下一个待读取第k个entry（包括UNUSED类型的entry）
+        while (read_size > 0 && inode_size > 0) {
+            memcpy(e, datablock->data + k*sizeof(struct entry), sizeof(struct entry));
+            read_size -= sizeof(struct entry);
+            if (e->type == UNUSED) {
+                k++;
+                continue;
+            }
+            inode_size -= sizeof(struct entry);
+            if (strcmp(entry->name, e->name) == 0) {
+                // 匹配成功，进行删除
+                if (e->type == DIR_TYPE) {
+                    struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
+                    read_inode(e->inode, inode);
+                    struct dir* dir = (struct dir*)malloc(sizeof(struct dir));
+                    read_dir(inode, dir);
+                    for (int i=0; i<dir->num_entries; i++) {
+                        remove_entry(inode, dir->entries[i]);
+                    }
+                }
+                e->type = UNUSED;
+                // 写回数据块
+                memcpy(datablock->data + k*sizeof(struct entry), e, sizeof(struct entry));
+                write_data_block(iter->datablock_no, datablock);
+                // 如果数据块内没有可用entry则需要释放
+                if (!datablock_has_entry(iter->datablock_no)) {
+                    // 数据块无可用entry，进行释放（设置bitmap）
+                    set_free_datablock_bitmap(iter->datablock_no);
+                }
+                // 释放inode
+                set_free_inode_bitmap(e->inode);
+
+                // 更新inode大小
+                parent_inode->st_size -= sizeof(struct entry);
+                // 写回磁盘
+                write_inode(parent_inode->st_ino, parent_inode);
+                return 0;
+            }
+            k++;
+        }
+        // 该数据块无待删除entry，继续读取下一个数据块
+    }
+    free(iter);
+    free(e);
+    free(datablock);
+    iter = NULL;
+    e = NULL;
+    datablock = NULL;
+    return 0;
 }
 
 
@@ -401,13 +472,31 @@ static int SFS_mkdir(const char* path, mode_t mode) {
 static int SFS_rmdir(const char* path) {
     // TODO SFS_rmdir 删除目录
     printf("[SFS_rmdir] path=%s\n", path);
-    if (strcmp(path, "/")) {
+    if (strcmp(path, "/") == 0) {
         // 根目录无法删除
         printf("[SFS_rmdir] fail to remove the root dir\n");
         return -1;
     }
+    struct entry* entry = (struct entry*)malloc(sizeof(struct entry)); // 待删除的entry
+    if (find_entry(path, entry) != 0) {
+        // 不存在该路径对应的entry
+        printf("[SFS_rmdir] the path %s does not exist\n", path);
+        return -1;
+    }
+    // 找到了路径对应的entry
+    struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
+    char* parent_path = (char*)malloc(sizeof(path));
+    // 获取path的上一级目录
+    get_parent_path(path, parent_path); // 获得上一级路径
+    find_entry(parent_path, parent_entry); // 获得上一级entry
+    // 遍历parent_inode的数据块进行匹配删除
+    struct inode* parent_inode = (struct inode*)malloc(sizeof(struct inode));
+    read_inode(parent_entry->inode, parent_inode);
+    remove_entry(parent_inode, entry);
 
-
+    free(entry);
+    free(parent_entry);
+    free(parent_inode);
     return 0;
 }
 
