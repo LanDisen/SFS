@@ -260,7 +260,7 @@ int datablock_has_entry(short int datablock_no) {
 }
 
 /**
- * 为inode分配一个新的数据块
+ * 为inode分配一个新的数据块（会自动寻找空闲数据块）
 */
 int alloc_datablock(struct inode* inode, short int* datablock_no) {
     // TODO 实现多级alloc_datablock
@@ -284,16 +284,17 @@ int alloc_datablock(struct inode* inode, short int* datablock_no) {
         }
         index++;
     }
+    printf("[alloc_datablock] datablock_no=%d\n", *datablock_no);
 
     return 0;
 }
 
 // 以上是bitmap、inode、数据块相关函数
 
-/*------------------------------------------------*/
+/**********************/
 /* inode迭代器相关函数 */
 int has_next(struct inode_iter* iter) {
-    if (iter->read_size >= iter->inode->st_size || iter->index > 6) {
+    if (iter->inode->st_size == 0 || iter->read_size >= iter->inode->st_size || iter->index > 6) {
         // 超出间接索引级别，或者已读取完全部数据
         return 0;
     }
@@ -317,6 +318,74 @@ void next(struct inode_iter* iter, struct data_block* data_block) {
     } else if (iter->index == 4) {
         // TODO 一级间接索引
     }
+}
+
+/* 以上是inode迭代器相关函数 */
+/*********************************************/
+/* 以下是文件读写相关（read/write）函数 */
+
+// 将inode数据读取到data中
+int read_file(struct inode* inode, char* data, size_t size) {
+    printf("[read_file] ino=%d\n", inode->st_ino);
+    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
+    new_inode_iter(iter, inode);
+    // 遍历inode中的数据块，拷贝到data中
+    struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
+    int n = 0; // 已读取的数据块数
+    int read_size = size;
+    read_size = MIN(read_size, inode->st_size); // 由于参数size按块读取（read_size=4096?），设置为不能超过原inode大小
+    while (has_next(iter)) {
+        int copy_size = MIN(read_size, sizeof(struct data_block));
+        read_size -= copy_size;
+        next(iter, datablock);
+        // FIXME next未结束
+        memcpy(data + n*sizeof(struct data_block), datablock, copy_size);;
+        n += 1;
+    }
+    free(datablock);
+    datablock = NULL;
+    return 0;
+}
+
+// 将data写到inode数据中（不在这里更新inode大小）
+int write_file(struct inode* inode, char* data, size_t size) {
+    printf("[write_file] ino=%d\n", inode->st_ino);
+    printf("[write_file] size=%ld\n", size);
+    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
+    new_inode_iter(iter, inode);
+    // 遍历inode数据块写入（如果已满需要分配，如果没写完则需要释放）
+    struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
+    int n = 0; // 读取的数据块数量
+    int write_size = size;
+    while (has_next(iter)) {
+        next(iter, datablock);
+        int copy_size = MIN(write_size, sizeof(struct data_block));
+        if (write_size > 0) {
+            memcpy(datablock->data, data + n*sizeof(struct data_block), copy_size);
+            // 写回磁盘
+            write_data_block(iter->datablock_no, datablock);
+            write_size -= copy_size;
+        } else if (write_size <= 0) {
+            // inode其它多余的没写的数据块需要释放
+            set_free_datablock_bitmap(iter->datablock_no);
+        }
+        n++;
+    }
+    // 遍历完所有数据块也还有需要写的数据，需要分配数据块
+    while (write_size > 0)  {
+        int short* datablock_no = (int short*)malloc(sizeof(int short));
+        alloc_datablock(inode, datablock_no);
+        read_data_block(*datablock_no, datablock); // 读取刚分配的数据块
+        int copy_size = MIN(write_size, sizeof(struct data_block));
+        // 写入数据块
+        memcpy(datablock->data, data + n*sizeof(struct data_block), copy_size);
+        n++;
+        // 写回磁盘
+        write_data_block(*datablock_no, datablock);
+        write_size -= copy_size;
+    }
+
+    return 0;
 }
 
 #endif

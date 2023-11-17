@@ -169,7 +169,6 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
  * @param entry        待删除的entry指针
 */
 int remove_entry(struct inode* parent_inode, struct entry* entry) {
-    // TODO 实现remove_entry
     // 这里暂时保证待删除的参数entry一定存在
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, parent_inode);
@@ -181,7 +180,6 @@ int remove_entry(struct inode* parent_inode, struct entry* entry) {
     while (has_next(iter) && inode_size > 0) {
         next(iter, datablock);
         // 匹配待删除的entry
-        // FIXME read_size的计算有误，不一定每个数据块都是满的
         int read_size = BLOCK_SIZE; 
         int k = 0; // 从数据块中下一个待读取第k个entry（包括UNUSED类型的entry）
         while (read_size > 0 && inode_size > 0) {
@@ -239,7 +237,12 @@ int remove_entry(struct inode* parent_inode, struct entry* entry) {
 // 以下为fuse_operations需要实现的SFS回调函数
 
 /*
- * 初始化文件系统
+ * 基于inode组织磁盘：
+ * | super block | inode bitmap | data bitmap | inode area | data area |
+ * 一个数据块可以存放 512/64 = 8 个inode
+ * 最大文件大小为：(4*512 + 8*512 + 8*8*512 + 8*8*8*512) Byte = 301056 Byte = 294 kB
+ * 
+ * 初始化文件系统：
  * 1. 打开文件系统的载体文件（sfs.img）
  * 2. 检查文件系统是否已经被初始化，如果已经初始化，可以跳过初始化步骤
  * 3. 如果文件系统尚未初始化，进行初始化操作，包括超级块的填充以及inode位图和数据块位图的初始化
@@ -503,7 +506,6 @@ static int SFS_rmdir(const char* path) {
 // 创建文件
 // touch要求不仅仅是创建文件，还要求可以修改文件的访问时间
 static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
-    // TODO SFS_mknod 创建文件
     printf("[SFS_mknod] path=%s\n", path);
     (void) mode;
     struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
@@ -599,57 +601,94 @@ static int SFS_unlink(const char* path) {
 }
 
 // 打开文件
-static int SFS_open(const char* path, struct fuse_file_info* fi) {
-    
-    // struct inode* inode;
-    // // 根据路径查找相应的inode，以确定要打开的文件
-
-
-    // // 检查文件是否存在
-    // if (inode == NULL) {
-    //     return -ENOENT; // 未找到该文件
-    // }
-    // // 暂时认为该文件系统为单用户，不检查权限
-    
-
-    // // 已找到inode，将其存储在fi->fh中，以便后续操作使用
-    // fi->fh = (uintptr_t)inode;
-    // TODO SFS_open 打开文件
-
-    return 0;
-}
+// static int SFS_open(const char* path, struct fuse_file_info* fi) {
+//     struct inode* inode;
+//     根据路径查找相应的inode，以确定要打开的文件
+//     检查文件是否存在
+//     if (inode == NULL) {
+//         return -ENOENT; // 未找到该文件
+//     }
+//     暂时认为该文件系统为单用户，不检查权限
+//     已找到inode，将其存储在fi->fh中，以便后续操作使用
+//     fi->fh = (uintptr_t)inode;
+//     return 0;
+// }
 
 // 关闭文件
-static int SFS_release(const char* path, struct fuse_file_info* fi) {
-    // 在这里关闭文件
-    // TODO SFS_release 关闭文件
-    return 0;
-}
+// static int SFS_release(const char* path, struct fuse_file_info* fi) {
+//     在这里关闭文件
+//     return 0;
+// }
 
 // 读文件
 static int SFS_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
+    // TODO SFS_read 读文件
     // 读文件内容到buf
     // struct inode* inode = (struct inode*)(uintptr_t)fi->fh;
-    // // 根据inode中的数据块索引和offset计算要读取的数据块和位置
+    // 根据inode中的数据块索引和offset计算要读取的数据块和位置
     // short int ino = inode->st_ino; // 获取inode号
-
-
     // 从数据块中读取数据到buf中，根据size和offset
     // 注意：这里的示例代码假设数据块存储在磁盘上，需要根据文件系统的实际设计来实现数据的读取
     //struct data_block* block = malloc(sizeof(struct data_block));
-
     // 更新文件的偏移量，这里未实际更新，您需要根据读取的数据大小来更新
-
     // 返回读取的数据给调用者
 
 
-    return -1; // 返回实际读取的字节数，如果读取失败，返回负数表示错误
+    struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+    find_entry(path, entry);
+    if (entry->type != FILE_TYPE) {
+        printf("[SFS_read] the path %s is not a file\n", path);
+        return -EISDIR; // 无法读取目录
+    }
+    // 获取读取文件的inode
+    struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
+    read_inode(entry->inode, inode);
+    if (inode->st_size < offset) {
+        free(entry);
+        free(inode);
+        // 要保证文件大小大于所要读取的偏移量
+        return -ESPIPE;
+    }
+    printf("[SFS_read] inode size=%ld\n", inode->st_size);
+
+    char* data = malloc(inode->st_size);
+    read_file(inode, data, size); // 将inode存储的数据读取到data
+    // FIXME read_file未运行完毕，即没有到达它的下一行
+    // 将数据读到buf内存
+    memcpy(buf, data + offset, size);
+    free(entry);
+    free(inode);
+    return size; // 返回实际读取的字节数，如果读取失败，返回负数表示错误
 }
 
 // 写文件
 static int SFS_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
     // TODO SFS_write 写文件
-    return 0;
+    struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+    find_entry(path, entry);
+    if (entry->type != FILE_TYPE) {
+        printf("[SFS_read] the path %s is not a file\n", path);
+        return -EISDIR; // 无法读取目录
+    }
+    // 获取待写文件的inode
+    struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
+    read_inode(entry->inode, inode);
+    if (inode->st_size < offset) {
+        // 要保证文件大小大于所要读取的偏移量
+        free(entry);
+        free(inode);
+        return -ESPIPE;
+    }
+
+    int new_size = MAX(offset + size, inode->st_size);
+    char* data = malloc(new_size);
+    read_file(inode, data, inode->st_size);
+    memcpy(data + offset, buf, size);
+    write_file(inode, data, new_size);
+    inode->st_size = new_size; // 更新inode大小
+    // 写回inode到磁盘
+    write_inode(inode->st_ino, inode);
+    return size;
 }
 
 // 修改时间
@@ -670,8 +709,8 @@ static struct fuse_operations SFS_operations = {
     .rmdir   = SFS_rmdir,   // 删除目录
     .mknod   = SFS_mknod,   // 创建文件
     .unlink  = SFS_unlink,  // 删除文件
-    .open    = SFS_open,    // 打开文件
-    .release = SFS_release, // 关闭文件
+    // .open    = SFS_open,    // 打开文件
+    // .release = SFS_release, // 关闭文件
     .read    = SFS_read,    // 读文件
     .write   = SFS_write,   // 写文件
     .utimens = SFS_utimens, // 修改时间（创建文件要求实现）
