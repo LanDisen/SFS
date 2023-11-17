@@ -155,6 +155,48 @@ int get_free_datablock_no(short int* datablock_no) {
     return -1;
 }
 
+/**
+ * 设置bitmap中inode号为空闲（释放inode）
+*/
+int set_free_inode_bitmap(short int ino) {
+    // 读取inode位图
+    uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
+    fseek(fs, sb->first_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fread(inode_bitmap, sizeof(inode_bitmap), 1, fs);
+    // bitmap定位
+    int row = ino >> 3;
+    int col = ino % 8;
+    uint8_t byte = inode_bitmap[row];
+    uint8_t mask = 0b11111111 - (1 << (7 - col));
+    inode_bitmap[row] = byte & mask;
+    // 写回磁盘
+    fseek(fs, sb->first_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
+    fwrite(inode_bitmap, sizeof(inode_bitmap), 1, fs);
+    printf("[set_free_inode_bitmap] ino=%d\n", ino);
+    return 0;
+}
+
+/**
+ * 设置bitmap中数据块号为空闲（释放数据块）
+*/
+int set_free_datablock_bitmap(short int datablock_no) {
+    // 读取数据位图
+    uint8_t data_block_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0};
+    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
+    fread(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
+    // bitmap定位
+    int row = datablock_no >> 3;
+    int col = datablock_no % 8;
+    uint8_t byte = data_block_bitmap[row];
+    uint8_t mask = 0b11111111 - (1 << (7 - col));
+    data_block_bitmap[row] = byte & mask;
+    // 写回磁盘
+    fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
+    fwrite(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
+    printf("[set_free_datablock_bitmap] datablock_no=%d\n", datablock_no);
+    return 0;
+}
+
 // 根据inode号读取inode
 int read_inode(short int ino, struct inode* inode) {
     printf("[read_inode] ino=%d\n", ino);
@@ -288,66 +330,66 @@ int get_last_datablock(struct inode* inode, struct data_block* data_block) {
     return 0;
 }
 
-void test() {
-    // 手动为根目录添加目录项
-    printf("[test]\n");
+// void test() {
+//     // 手动为根目录添加目录项
+//     printf("[test]\n");
 
-    short int* ino_a = (short int*)malloc(sizeof(short int));
-    short int* ino_b = (short int*)malloc(sizeof(short int));
-    // get_free_ino(ino_a); // 1
-    // get_free_ino(ino_b); // 2
-    *ino_a = 1;
-    *ino_b = 2;
-    struct inode* inode_a = (struct inode*)malloc(sizeof(struct inode));
-    struct inode* inode_b = (struct inode*)malloc(sizeof(struct inode));
+//     short int* ino_a = (short int*)malloc(sizeof(short int));
+//     short int* ino_b = (short int*)malloc(sizeof(short int));
+//     // get_free_ino(ino_a); // 1
+//     // get_free_ino(ino_b); // 2
+//     *ino_a = 1;
+//     *ino_b = 2;
+//     struct inode* inode_a = (struct inode*)malloc(sizeof(struct inode));
+//     struct inode* inode_b = (struct inode*)malloc(sizeof(struct inode));
 
-    inode_a->st_mode  = __S_IFDIR | 0755; // 目录文件
-    inode_a->st_ino   = *ino_a; // 根目录的inode号为0（第一个）
-    inode_a->st_nlink = 1; // 链接引用数
-    inode_a->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
-    inode_a->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
-    inode_a->st_size  = 0; // 初始大小为空
+//     inode_a->st_mode  = __S_IFDIR | 0755; // 目录文件
+//     inode_a->st_ino   = *ino_a; // 根目录的inode号为0（第一个）
+//     inode_a->st_nlink = 1; // 链接引用数
+//     inode_a->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
+//     inode_a->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
+//     inode_a->st_size  = 0; // 初始大小为空
 
-    inode_b->st_mode  = __S_IFDIR | 0755; // 目录文件
-    inode_b->st_ino   = *ino_b; // 根目录的inode号为0（第一个）
-    inode_b->st_nlink = 1; // 链接引用数
-    inode_b->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
-    inode_b->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
-    inode_b->st_size  = 0; // 初始大小为空
+//     inode_b->st_mode  = __S_IFDIR | 0755; // 目录文件
+//     inode_b->st_ino   = *ino_b; // 根目录的inode号为0（第一个）
+//     inode_b->st_nlink = 1; // 链接引用数
+//     inode_b->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
+//     inode_b->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
+//     inode_b->st_size  = 0; // 初始大小为空
 
-    struct entry* a = (struct entry*)malloc(sizeof(struct entry));
-    strcpy(a->name, "a");
-    strcpy(a->extension, "");
-    a->inode = *ino_a;
-    a->type = DIR_TYPE;
+//     struct entry* a = (struct entry*)malloc(sizeof(struct entry));
+//     strcpy(a->name, "a");
+//     strcpy(a->extension, "");
+//     a->inode = *ino_a;
+//     a->type = DIR_TYPE;
 
-    struct entry* b = (struct entry*)malloc(sizeof(struct entry));
-    strcpy(b->name, "b");
-    strcpy(b->extension, "");
-    b->inode = *ino_b;
-    b->type = DIR_TYPE;
+//     struct entry* b = (struct entry*)malloc(sizeof(struct entry));
+//     strcpy(b->name, "b");
+//     strcpy(b->extension, "");
+//     b->inode = *ino_b;
+//     b->type = DIR_TYPE;
 
-    write_inode(*ino_a, inode_a);
-    write_inode(*ino_b, inode_b);
+//     write_inode(*ino_a, inode_a);
+//     write_inode(*ino_b, inode_b);
 
-    // 目录inode存放的是entry（子目录或文件）的inode号
-    short int* datablock_no = (short int*)malloc(sizeof(short int)); // root_entry的目录项存放的数据块
-    // 初始根目录为空，新开一个数据块
-    get_free_datablock_no(datablock_no); // 理论上应该是0
-    struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
-    read_data_block(*datablock_no, data_block);
-    // a和b对应entry存入根目录inode指向数据块中
-    memcpy(data_block->data, a, sizeof(struct entry));
-    memcpy(data_block->data + sizeof(struct entry), b, sizeof(struct entry));
-    write_data_block(*datablock_no, data_block); // 写回磁盘
+//     // 目录inode存放的是entry（子目录或文件）的inode号
+//     short int* datablock_no = (short int*)malloc((short int)); // root_entry的目录项存放的数据块
+//     // 初始根目录为空，新开一个数据块
+//     get_free_datablock_no(datablock_no); // 理论上应该是0
+//     struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
+//     read_data_block(*datablock_no, data_block);
+//     // a和b对应entry存入根目录inode指向数据块中
+//     memcpy(data_block->data, a, sizeof(struct entry));
+//     memcpy(data_block->data + sizeof(struct entry), b, sizeof(struct entry));
+//     write_data_block(*datablock_no, data_block); // 写回磁盘
 
-    // 更新根目录inode记录的文件大小（两个目录项a和b）
-    struct inode* root_inode = (struct inode*)malloc(sizeof(struct inode));
-    root_inode->addr[0] = *datablock_no;
-    read_inode(0, root_inode);
-    root_inode->st_size += 2 * sizeof(struct entry);
-    write_inode(0, root_inode); // 写回磁盘
+//     // 更新根目录inode记录的文件大小（两个目录项a和b）
+//     struct inode* root_inode = (struct inode*)malloc(sizeof(struct inode));
+//     root_inode->addr[0] = *datablock_no;
+//     read_inode(0, root_inode);
+//     root_inode->st_size += 2 * sizeof(struct entry);
+//     write_inode(0, root_inode); // 写回磁盘
 
-}
+// }
 
 #endif
