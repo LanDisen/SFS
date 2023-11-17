@@ -72,7 +72,7 @@ int find_entry(const char* path, struct entry* entry) {
     }
     char* path_copy = (char*)malloc(sizeof(path));
     strcpy(path_copy, path);
-    strcpy(path_copy, path_copy + 1);
+    strcpy(path_copy, path + 1);
     
     struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
     struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
@@ -90,9 +90,11 @@ int find_entry(const char* path, struct entry* entry) {
         read_inode(cur_entry->inode, cur_inode);
         read_dir(cur_inode, cur_dir);
         for (int i=0; i<cur_dir->num_entries; i++) {
+            // printf("head=%s\n", head);
+            // printf("cur_dir->name=%s\n", cur_dir->entries[i]->name);
             if (strcmp(cur_dir->entries[i]->name, head) == 0) {
                 // 子目录或文件路径匹配成功
-                *cur_entry = *cur_dir->entries[i];
+                *cur_entry = *(cur_dir->entries[i]);
                 flag = 1;
                 break;
             }
@@ -122,62 +124,6 @@ int find_entry(const char* path, struct entry* entry) {
     free(cur_inode);
     free(cur_dir);
     return ret;
-
-    // printf("[find_entry] path=%s\n", path);
-    // if (path == NULL || strcmp(path, "") == 0) {
-    //     printf("[find_entry] Error: the entry path should not be NULL or empty\n");
-    //     return -1;
-    // }
-    // if (strcmp(path, "/") == 0) {
-    //     // 根目录
-    //     *entry = *root_entry;
-    //     return 0;
-    // }
-    // struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
-    // struct entry* cur_entry = (struct entry*)malloc(sizeof(struct entry));
-    // struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
-    // // 不能操作const的path参数，只能操作path_copy
-    // char* path_copy = (char*)malloc(sizeof(path));
-    // strcpy(path_copy, path);
-    // // 路径解析
-    // if (path_copy[0] == '/') {
-    //     // 路径第一个字符为"/"则是从根目录开始遍历
-    //     *cur_entry = *root_entry;
-    //     strcpy(path_copy, path_copy + 1); // 去除path的第一个"/"字符
-    // } else {
-    //     // cur_entry = work_entry; // 工作目录开始遍历
-    //     *cur_entry = *entry;
-    // }
-    // char* head = (char*)malloc(sizeof(path_copy));
-    // char* tail = (char*)malloc(sizeof(path_copy));
-    // split_path(path_copy, head, tail);
-    // short int cur_inode_no = cur_entry->inode;
-    // read_inode(cur_inode_no, cur_inode); // 获取inode
-    // read_dir(cur_inode, cur_dir);        // 根据inode获取对应dir
-    // // 遍历entry匹配文件名
-    // for (int i=0; i<cur_dir->num_entries; i++) {
-    //     // printf("name=%s\n", cur_dir->entries[i]->name);
-    //     if (strcmp(cur_dir->entries[i]->name, head) == 0) {
-    //         int ret;
-    //         if (strcmp(tail, "") == 0) {
-    //             // 解析结束
-    //             *entry = *(cur_dir->entries[i]);
-    //             ret = 0;
-    //         } else {
-    //             // 存在该目录，继续解析
-    //             ret = find_entry(tail, entry);
-    //         }
-    //         free(head);
-    //         free(tail);
-    //         free(path_copy);
-    //         return ret;
-    //     }
-    // }
-    // printf("[find_entry] Error: the entry %s does not exist\n", path);
-    // free(head);
-    // free(tail);
-    // free(path_copy);
-    // return -1;
 }
 
 /**
