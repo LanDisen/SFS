@@ -21,17 +21,16 @@
 int read_dir(struct inode* inode, struct dir* dir) {
     printf("[read_dir] ino=%d\n", inode->st_ino);
     dir->num_entries = 0;
-    int file_size = inode->st_size;
-    printf("inode size=%d\n", file_size);
+    int inode_size = inode->st_size;
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, inode);
     struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
-    while (has_next(iter) && file_size > 0) {
+    while (has_next(iter) && inode_size > 0) {
 
         next(iter, data_block);
         // 若读到最后一块则read_size会小于512，否则为512
-        int read_size = MIN(file_size, sizeof(struct data_block));
-        file_size -= sizeof(data_block);
+        int read_size = MIN(inode_size, sizeof(struct data_block));
+        inode_size -= sizeof(data_block);
         // printf("read_size=%d\n", read_size);
         
         while (read_size > 0) {
@@ -60,69 +59,125 @@ int read_dir(struct inode* inode, struct dir* dir) {
  *     (4) find ef's entry
 */
 int find_entry(const char* path, struct entry* entry) {
+    // TODO 待重构，多级目录有bug
     printf("[find_entry] path=%s\n", path);
     if (path == NULL || strcmp(path, "") == 0) {
         printf("[find_entry] Error: the entry path should not be NULL or empty\n");
         return -1;
     }
-
     if (strcmp(path, "/") == 0) {
         // 根目录
         *entry = *root_entry;
         return 0;
     }
-
-    struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
-    struct entry* cur_entry = (struct entry*)malloc(sizeof(struct entry));
-    struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
-
-    // 不能操作const的path参数，只能操作path_copy
     char* path_copy = (char*)malloc(sizeof(path));
     strcpy(path_copy, path);
-    // 路径解析
-    if (path_copy[0] == '/') {
-        // 路径第一个字符为"/"则是从根目录开始遍历
-        cur_entry = root_entry;
-        strcpy(path_copy, path_copy + 1); // 去除path的第一个"/"字符
-    } else {
-        cur_entry = work_entry; // 工作目录开始遍历
-    }
+    strcpy(path_copy, path_copy + 1);
     
-    char* head = (char*)malloc(sizeof(path_copy));
-    char* tail = (char*)malloc(sizeof(path_copy));
+    struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
+    struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
+    struct entry* cur_entry = (struct entry*)malloc(sizeof(struct entry));
+    *cur_entry = *root_entry;
+    // 路径解析
+    char* cur_path = (char*)malloc(sizeof(path)); // 开始为根目录"/"
+    char* head = (char*)malloc(sizeof(path)); // 分割路径的前部分（待匹配的子目录）
+    char* tail = (char*)malloc(sizeof(path)); // 分割路径的后部分
     split_path(path_copy, head, tail);
-
-    short int cur_inode_no = cur_entry->inode;
-    read_inode(cur_inode_no, cur_inode); // 获取inode
-    read_dir(cur_inode, cur_dir);        // 根据inode获取对应dir
-
-    // printf("path_copy=%s\n", path_copy);
-    // printf("head=%s\n", head);
-    // printf("tail=%s\n", tail);
-    // 遍历entry匹配文件名
-    for (int i=0; i<cur_dir->num_entries; i++) {
-        // printf("name=%s\n", cur_dir->entries[i]->name);
-        if (strcmp(cur_dir->entries[i]->name, head) == 0) {
-            int ret;
-            if (strcmp(tail, "") == 0) {
-                // 解析结束
-                *entry = *(cur_dir->entries[i]);
-                ret = 0;
-            } else {
-                // 存在该目录，继续解析
-                ret = find_entry(tail, entry);
+    strcpy(cur_path, "/");
+    int flag = 0; // 匹配成功标志
+    int ret;
+    while (1) {
+        read_inode(cur_entry->inode, cur_inode);
+        read_dir(cur_inode, cur_dir);
+        for (int i=0; i<cur_dir->num_entries; i++) {
+            if (strcmp(cur_dir->entries[i]->name, head) == 0) {
+                // 子目录或文件路径匹配成功
+                *cur_entry = *cur_dir->entries[i];
+                flag = 1;
+                break;
             }
-            free(head);
-            free(tail);
-            free(path_copy);
-            return ret;
+        }
+        if (flag) {
+            // 路径匹配成功
+            flag = 0;
+            if (strcmp(tail, "") == 0) {
+                *entry = *cur_entry;
+                ret = 0;
+                break;
+            }
+            strcpy(path_copy, tail);
+            split_path(path_copy, head, tail);
+            continue;
+        } else {
+            // 路径匹配失败
+            entry = NULL;
+            ret = -1;
+            break;
         }
     }
-    printf("[find_entry] Error: the entry %s does not exist\n", path);
+    free(path_copy);
     free(head);
     free(tail);
-    free(path_copy);
-    return -1;
+    free(cur_entry);
+    free(cur_inode);
+    free(cur_dir);
+    return ret;
+
+    // printf("[find_entry] path=%s\n", path);
+    // if (path == NULL || strcmp(path, "") == 0) {
+    //     printf("[find_entry] Error: the entry path should not be NULL or empty\n");
+    //     return -1;
+    // }
+    // if (strcmp(path, "/") == 0) {
+    //     // 根目录
+    //     *entry = *root_entry;
+    //     return 0;
+    // }
+    // struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
+    // struct entry* cur_entry = (struct entry*)malloc(sizeof(struct entry));
+    // struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
+    // // 不能操作const的path参数，只能操作path_copy
+    // char* path_copy = (char*)malloc(sizeof(path));
+    // strcpy(path_copy, path);
+    // // 路径解析
+    // if (path_copy[0] == '/') {
+    //     // 路径第一个字符为"/"则是从根目录开始遍历
+    //     *cur_entry = *root_entry;
+    //     strcpy(path_copy, path_copy + 1); // 去除path的第一个"/"字符
+    // } else {
+    //     // cur_entry = work_entry; // 工作目录开始遍历
+    //     *cur_entry = *entry;
+    // }
+    // char* head = (char*)malloc(sizeof(path_copy));
+    // char* tail = (char*)malloc(sizeof(path_copy));
+    // split_path(path_copy, head, tail);
+    // short int cur_inode_no = cur_entry->inode;
+    // read_inode(cur_inode_no, cur_inode); // 获取inode
+    // read_dir(cur_inode, cur_dir);        // 根据inode获取对应dir
+    // // 遍历entry匹配文件名
+    // for (int i=0; i<cur_dir->num_entries; i++) {
+    //     // printf("name=%s\n", cur_dir->entries[i]->name);
+    //     if (strcmp(cur_dir->entries[i]->name, head) == 0) {
+    //         int ret;
+    //         if (strcmp(tail, "") == 0) {
+    //             // 解析结束
+    //             *entry = *(cur_dir->entries[i]);
+    //             ret = 0;
+    //         } else {
+    //             // 存在该目录，继续解析
+    //             ret = find_entry(tail, entry);
+    //         }
+    //         free(head);
+    //         free(tail);
+    //         free(path_copy);
+    //         return ret;
+    //     }
+    // }
+    // printf("[find_entry] Error: the entry %s does not exist\n", path);
+    // free(head);
+    // free(tail);
+    // free(path_copy);
+    // return -1;
 }
 
 /**
@@ -226,19 +281,19 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
 // }
 
 // 根据文件路径获取其对应的inode
-int find_inode(const char* path, struct inode* inode) {
-    printf("[find_inode] path=%s\n", path);
-    struct entry* entry = malloc(sizeof(struct entry));
-    int ret = -1;
-    if (find_entry(path, entry) == 0) {
-        // 存在该路径
-        ret = read_inode(entry->inode, inode);
-    } else {
-        inode = NULL;
-    }
-    free(entry);
-    return ret;
-}
+// int find_inode(const char* path, struct inode* inode) {
+//     printf("[find_inode] path=%s\n", path);
+//     struct entry* entry = malloc(sizeof(struct entry));
+//     int ret = -1;
+//     if (find_entry(path, entry) == 0) {
+//         存在该路径
+//         ret = read_inode(entry->inode, inode);
+//     } else {
+//         inode = NULL;
+//     }
+//     free(entry);
+//     return ret;
+// }
 
 // ************************************************************************************
 // 以下为fuse_operations需要实现的SFS回调函数
@@ -418,6 +473,7 @@ static int SFS_mkdir(const char* path, mode_t mode) {
     char* parent_path = (char*)malloc(sizeof(path));
     // 获取path的上一级目录
     get_parent_path(path, parent_path); // 获得上一级路径
+    //printf("parent_path=%s\n", parent_path);
     find_entry(parent_path, parent_entry); // 获得上一级entry（需要保证是目录文件类型）
     if (parent_entry->type != DIR_TYPE) {
         // 需要保证上一级是目录文件类型
