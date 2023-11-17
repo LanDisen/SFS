@@ -22,6 +22,7 @@
  *          path=""         -> head="", tail=""
 */
 void split_path(const char* path, char* head, char* tail) {
+    // FIXME bug
     if (strstr(path, "/") == NULL) {
         // path中没有分隔符
         strcpy(head, path);
@@ -105,10 +106,11 @@ void get_parent_path(const char* path, char* parent) {
  *          path="/a" -> file_name="a"
 */
 void get_file_name(const char* path, char* file_name) {
+    // FIXME path="/a/b/c" -> file_name=""
     char* path_copy = (char*)malloc(sizeof(path));
     strcpy(path_copy, path);
     if (path_copy[0] == '/') {
-        strcpy(path_copy, path_copy + 1);
+        strcpy(path_copy, path + 1);
     }
     char* head = (char*)malloc(sizeof(path));
     char* tail = (char*)malloc(sizeof(path));
