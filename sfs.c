@@ -85,11 +85,13 @@ int find_entry(const char* path, struct entry* entry) {
     strcpy(cur_path, "/");
     int flag = 0; // 匹配成功标志
     int ret;
+    char name[MAX_FILE_EXTENSION + MAX_FILE_EXTENSION + 1];
     while (1) {
         read_inode(cur_entry->inode, cur_inode);
         read_dir(cur_inode, cur_dir);
         for (int i=0; i<cur_dir->num_entries; i++) {
-            if (strcmp(cur_dir->entries[i]->name, head) == 0) {
+            full_name(cur_dir->entries[i]->name, cur_dir->entries[i]->extension, name);
+            if (strcmp(name, head) == 0) {
                 // 子目录或文件路径匹配成功
                 *cur_entry = *(cur_dir->entries[i]);
                 flag = 1;
@@ -129,7 +131,9 @@ int find_entry(const char* path, struct entry* entry) {
  * @param entry        待添加的entry指针
 */
 void add_entry(struct inode* parent_inode, struct entry* entry) {
-    printf("[add_entry] entry->name=%s\n", entry->name);
+    char name[MAX_FILE_NAME + 1 + MAX_FILE_EXTENSION];
+    full_name(entry->name, entry->extension, name);
+    printf("[add_entry] entry name=%s\n", name);
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, parent_inode);
     struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
@@ -190,7 +194,7 @@ int remove_entry(struct inode* parent_inode, struct entry* entry) {
                 continue;
             }
             inode_size -= sizeof(struct entry);
-            if (strcmp(entry->name, e->name) == 0) {
+            if (strcmp(entry->name, e->name) == 0 && strcmp(entry->extension, e->extension) == 0) {
                 // 匹配成功，进行删除
                 if (e->type == DIR_TYPE) {
                     struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
@@ -399,9 +403,10 @@ static int SFS_readdir(const char* path, void* buf,
     read_dir(inode, dir);
 
     if (cur < dir->num_entries) {
-        char fname[MAX_FILE_NAME];
-        strcpy(fname, dir->entries[cur]->name);
-        printf("[SFS_readdir] name=%s\n", fname);
+        char fname[MAX_FILE_NAME + 1 + MAX_FILE_EXTENSION];
+        full_name(dir->entries[cur]->name, dir->entries[cur]->extension, fname);
+        // strcpy(fname, dir->entries[cur]->name);
+        // printf("[SFS_readdir] name=%s\n", fname);
         filler(buf, fname, NULL, ++cur, 0);
     }
 
@@ -546,7 +551,8 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
     char file_name[MAX_FILE_NAME];
     get_file_name(path, file_name);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
-    new_entry(entry, file_name, "", FILE_TYPE, *ino);
+    fname_ext(file_name, entry->name, entry->extension);
+    new_entry(entry, entry->name, entry->extension, FILE_TYPE, *ino);
 
     struct inode* parent_inode = (struct inode*)malloc(sizeof(struct inode));
     read_inode(parent_entry->inode, parent_inode);
@@ -622,18 +628,7 @@ static int SFS_unlink(const char* path) {
 
 // 读文件
 static int SFS_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-    // TODO SFS_read 读文件
-    // 读文件内容到buf
-    // struct inode* inode = (struct inode*)(uintptr_t)fi->fh;
-    // 根据inode中的数据块索引和offset计算要读取的数据块和位置
-    // short int ino = inode->st_ino; // 获取inode号
-    // 从数据块中读取数据到buf中，根据size和offset
-    // 注意：这里的示例代码假设数据块存储在磁盘上，需要根据文件系统的实际设计来实现数据的读取
-    //struct data_block* block = malloc(sizeof(struct data_block));
-    // 更新文件的偏移量，这里未实际更新，您需要根据读取的数据大小来更新
-    // 返回读取的数据给调用者
-
-
+    printf("[SFS_read] path=%s\n", path);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     find_entry(path, entry);
     if (entry->type != FILE_TYPE) {
@@ -653,7 +648,6 @@ static int SFS_read(const char* path, char* buf, size_t size, off_t offset, stru
 
     char* data = malloc(inode->st_size);
     read_file(inode, data, size); // 将inode存储的数据读取到data
-    // FIXME read_file未运行完毕，即没有到达它的下一行
     // 将数据读到buf内存
     memcpy(buf, data + offset, size);
     free(entry);
@@ -663,7 +657,7 @@ static int SFS_read(const char* path, char* buf, size_t size, off_t offset, stru
 
 // 写文件
 static int SFS_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-    // TODO SFS_write 写文件
+    printf("[SFS_write] path=%s\n", path);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     find_entry(path, entry);
     if (entry->type != FILE_TYPE) {
