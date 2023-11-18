@@ -75,12 +75,13 @@ struct inode {
 #define DIR_TYPE 2  // 目录文件
 
 struct entry {
-    char name[MAX_FILE_NAME];           // 文件名，8字节
-    char extension[MAX_FILE_EXTENSION]; // 文件扩展名，3字节
+    char name[MAX_FILE_NAME + 1];           // 文件名，8+1字节
+    char extension[MAX_FILE_EXTENSION + 1]; // 文件扩展名，3+1字节
     char type; // 目录项类型（0未使用，1普通文件，2目录文件）
-    short int inode;                    // inode号，2字节
+    short int inode;                        // inode号，2字节
     // 备用3字节，其中1字节用于判断目录项类型 
-    char reserved[2];            
+    // char reserved[2];
+    // 备用2字节分别用于为name和ext字段补'\0'
 };
 
 // 多级目录结构
