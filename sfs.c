@@ -355,6 +355,25 @@ static int SFS_getattr(const char *path,
     (void) fi;
     printf("[SFS_getattr] path=%s\n", path);
 
+    // 过滤文件
+    char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
+    get_file_name(path, file_name);
+    if (strcmp(path, "/") != 0) {
+        struct entry* t_entry = (struct entry*)malloc(sizeof(struct entry));
+        fname_ext(file_name, t_entry->name, t_entry->extension);
+        // 进行过滤的文件类型
+        int condition = strcmp(file_name, "") == 0 || 
+                        strcmp(t_entry->extension, "swp") == 0 || 
+                        file_name[0] == '.' || 
+                        file_name[strlen(file_name)-1] == '~';
+        if (condition) {
+            printf("[SFS_getattr] filter the hidden file %s\n", file_name);
+            free(t_entry);
+            return -1;
+        }
+        free(t_entry);
+    }
+
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
 
     if (find_entry(path, entry) == -1) {
@@ -519,6 +538,15 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
     printf("[SFS_mknod] path=%s\n", path);
     (void) mode;
     (void) dev;
+    // 过滤文件
+    char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
+    get_file_name(path, file_name);
+    if (strcmp(file_name, "") == 0 || file_name[0] == '.') {
+        printf("[SFS_mknod] filter the hidden file %s\n", file_name);
+        return -1;
+    }
+
+
     struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
     char* parent_path = (char*)malloc(sizeof(path));
     // 获取path的上一级目录
@@ -554,8 +582,8 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
     set_inode_bitmap_used(*ino);
 
     // 创建新的entry作为文件
-    char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
-    get_file_name(path, file_name);
+    // char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
+    // get_file_name(path, file_name);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
 
     fname_ext(file_name, entry->name, entry->extension);
