@@ -135,6 +135,9 @@ int find_entry(const char* path, struct entry* entry) {
 void add_entry(struct inode* parent_inode, struct entry* entry) {
     char name[MAX_FILE_NAME + 1 + MAX_FILE_EXTENSION];
     full_name(entry->name, entry->extension, name);
+    if (name[0] == '.') {
+        return; // 隐藏文件
+    }
     printf("[add_entry] entry name=%s\n", name);
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, parent_inode);
@@ -515,6 +518,7 @@ static int SFS_rmdir(const char* path) {
 static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
     printf("[SFS_mknod] path=%s\n", path);
     (void) mode;
+    (void) dev;
     struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
     char* parent_path = (char*)malloc(sizeof(path));
     // 获取path的上一级目录
@@ -626,6 +630,7 @@ static int SFS_release(const char* path, struct fuse_file_info* fi) {
 
 // 读文件
 static int SFS_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
+    (void) fi;
     printf("[SFS_read] path=%s\n", path);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     find_entry(path, entry);
@@ -655,6 +660,7 @@ static int SFS_read(const char* path, char* buf, size_t size, off_t offset, stru
 
 // 写文件
 static int SFS_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
+    (void) fi;
     printf("[SFS_write] path=%s\n", path);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     find_entry(path, entry);
