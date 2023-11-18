@@ -148,4 +148,19 @@ void fname_ext(const char* file, char fname[], char ext[]) {
     }
 }
 
+/**
+ * 组合文件名和扩展名为完整文件名
+ * @param fname 文件名
+ * @param ext   扩展名
+ * @param file  文件完整名
+ * @example fname="file", ext="txt" -> file="file.txt"
+*/
+void full_name(const char fname[], const char ext[], char* file) {
+    int n1 = strlen(fname);
+    int n2 = strlen(ext);
+    memcpy(file, fname, n1*sizeof(char));
+    memcpy(file + n1*sizeof(char), ".", sizeof(char));
+    memcpy(file + (n1+1)*sizeof(char), ext, n2*sizeof(char));
+}
+
 #endif
