@@ -144,7 +144,9 @@ void fname_ext(const char* file, char fname[], char ext[]) {
     } else {
         // 存在分隔符
         memcpy(fname, file, k*sizeof(char));
+        fname[k] = '\0';
         strcpy(ext, file + k + 1);
+        ext[MAX_FILE_EXTENSION] = '\0';
     }
 }
 
