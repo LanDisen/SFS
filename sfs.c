@@ -39,6 +39,8 @@ int read_dir(struct inode* inode, struct dir* dir) {
                 inode_size -= sizeof(struct entry);
             }
             read_size -= sizeof(struct entry);
+            // free(entry);
+            // entry = NULL;
         }
     }
     free(data_block);
@@ -85,7 +87,7 @@ int find_entry(const char* path, struct entry* entry) {
     strcpy(cur_path, "/");
     int flag = 0; // 匹配成功标志
     int ret;
-    char name[MAX_FILE_EXTENSION + MAX_FILE_EXTENSION + 1];
+    char name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
     while (1) {
         read_inode(cur_entry->inode, cur_inode);
         read_dir(cur_inode, cur_dir);
@@ -452,7 +454,7 @@ static int SFS_mkdir(const char* path, mode_t mode) {
     set_inode_bitmap_used(*ino);
 
     // 创建新的entry作为目录文件
-    char file_name[MAX_FILE_NAME];
+    char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
     get_file_name(path, file_name);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     new_entry(entry, file_name, "", DIR_TYPE, *ino);
@@ -548,9 +550,10 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
     set_inode_bitmap_used(*ino);
 
     // 创建新的entry作为文件
-    char file_name[MAX_FILE_NAME];
+    char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
     get_file_name(path, file_name);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+
     fname_ext(file_name, entry->name, entry->extension);
     new_entry(entry, entry->name, entry->extension, FILE_TYPE, *ino);
 
@@ -607,24 +610,19 @@ static int SFS_unlink(const char* path) {
 }
 
 // 打开文件
-// static int SFS_open(const char* path, struct fuse_file_info* fi) {
-//     struct inode* inode;
-//     根据路径查找相应的inode，以确定要打开的文件
-//     检查文件是否存在
-//     if (inode == NULL) {
-//         return -ENOENT; // 未找到该文件
-//     }
-//     暂时认为该文件系统为单用户，不检查权限
-//     已找到inode，将其存储在fi->fh中，以便后续操作使用
-//     fi->fh = (uintptr_t)inode;
-//     return 0;
-// }
+static int SFS_open(const char* path, struct fuse_file_info* fi) {
+	(void)fi;
+	(void)path;
+	return 0;
+
+}
 
 // 关闭文件
-// static int SFS_release(const char* path, struct fuse_file_info* fi) {
-//     在这里关闭文件
-//     return 0;
-// }
+static int SFS_release(const char* path, struct fuse_file_info* fi) {
+    (void)fi;
+	(void)path;
+    return 0;
+}
 
 // 读文件
 static int SFS_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
@@ -703,8 +701,8 @@ static struct fuse_operations SFS_operations = {
     .rmdir   = SFS_rmdir,   // 删除目录
     .mknod   = SFS_mknod,   // 创建文件
     .unlink  = SFS_unlink,  // 删除文件
-    // .open    = SFS_open,    // 打开文件
-    // .release = SFS_release, // 关闭文件
+    .open    = SFS_open,    // 打开文件
+    .release = SFS_release, // 关闭文件
     .read    = SFS_read,    // 读文件
     .write   = SFS_write,   // 写文件
     .utimens = SFS_utimens, // 修改时间（创建文件要求实现）
