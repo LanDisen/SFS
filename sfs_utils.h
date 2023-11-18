@@ -121,4 +121,31 @@ void get_file_name(const char* path, char* file_name) {
     free(tail);
 }
 
+/**
+ * 分割文件名和扩展名（从右到左第一个分隔符开始分割）
+ * @param file  文件完整名
+ * @param fname 文件名
+ * @param ext   扩展名
+ * @example file="file.txt" -> fname="file", ext="txt"
+*/
+void fname_ext(const char* file, char fname[], char ext[]) {
+    int n = strlen(file);
+    int k = -1;
+    for (int i=n-1; i>=0; i--) {
+        if (file[i] == '.') {
+            k = i;
+            break;
+        }
+    }
+    if (k == -1) {
+        // 没有分隔符
+        strcpy(fname, file);
+        strcpy(ext, "");
+    } else {
+        // 存在分隔符
+        memcpy(fname, file, k*sizeof(char));
+        strcpy(ext, file + k + 1);
+    }
+}
+
 #endif
