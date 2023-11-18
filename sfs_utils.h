@@ -156,6 +156,11 @@ void fname_ext(const char* file, char fname[], char ext[]) {
  * @example fname="file", ext="txt" -> file="file.txt"
 */
 void full_name(const char fname[], const char ext[], char* file) {
+    if (strcmp(ext, "") == 0) {
+        // 扩展名为空
+        strcpy(file, fname);
+        return;
+    }
     int n1 = strlen(fname);
     int n2 = strlen(ext);
     memcpy(file, fname, n1*sizeof(char));
