@@ -393,7 +393,7 @@ static int SFS_getattr(const char *path,
 	stbuf->st_gid = inode->st_gid;
 	stbuf->st_size = inode->st_size;
     stbuf->st_blksize = BLOCK_SIZE;
-    stbuf->st_blocks = 1; // FIXME st_blocks
+    stbuf->st_blocks = inode->st_size / BLOCK_SIZE + 1;
 
     free(entry);
     free(inode);
