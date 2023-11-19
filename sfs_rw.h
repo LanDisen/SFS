@@ -261,11 +261,14 @@ int datablock_has_entry(short int datablock_no) {
 
 /**
  * 为inode分配一个新的数据块（会自动寻找空闲数据块）
+ * @param inode        需要添加新数据块的inode指针
+ * @param datablock_no 返回的空闲数据块号
 */
 int alloc_datablock(struct inode* inode, short int* datablock_no) {
-    // TODO 实现多级alloc_datablock
-    get_free_datablock_no(datablock_no);
+    get_free_datablock_no(datablock_no); // 获取空闲数据块进行返回
+    // 将该数据块加入到inode
     if (inode->st_size == 0) {
+        // inode大小为空，在第一个addr指向新的数据块号
         inode->addr[0] = *datablock_no;
         set_datablock_bitmap_used(*datablock_no);
         return 0;
@@ -281,6 +284,157 @@ int alloc_datablock(struct inode* inode, short int* datablock_no) {
             }
         } else if (index == 4) {
             // 一级间接索引
+            if (inode->addr[index] < 0) {
+                // 一级间接未使用，分配存储数据块号的数据块
+                short int* no = (short int*)malloc(sizeof(short int));
+                get_free_datablock_no(no); // 获取空闲数据块
+                inode->addr[index] = *no;
+                set_datablock_bitmap_used(*no); // 更新bitmap
+                // 读取存放数据块号的数据块
+                struct data_block* db = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(*no, db);
+                memset(db, -1, sizeof(struct data_block)); // 设置数据块为全是负数
+                memcpy(db, datablock_no, sizeof(short int)); // 第一个块号为分配的新数据块号
+                // 数据块写回磁盘
+                write_data_block(*no, db);
+                set_datablock_bitmap_used(*datablock_no); // 更新bitmap
+                return 0;
+            } else {
+                // 读取存放数据块号的数据块
+                struct data_block* db = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(inode->addr[index], db);
+                int k = 0;
+                while (k*sizeof(short int) < BLOCK_SIZE) {
+                    short int read_no;
+                    memcpy(&read_no, db + k*sizeof(short int), sizeof(short int));
+                    if (read_no < 0) {
+                        // 这一个数据块未使用，进行替换
+                        memcpy(db + k*sizeof(short int), datablock_no, sizeof(short int));
+                        set_datablock_bitmap_used(*datablock_no); // 更新bitmap已使用数据块
+                        // 写回数据块
+                        write_data_block(inode->addr[index], db);
+                        return 0;
+                    }
+                    k++;
+                }
+            }
+            // struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
+        } else if (index == 5) {
+            // 二级间接索引
+            if (inode->addr[index] < 0) {
+                // 二级间接未使用，分配存储数据块号的数据块
+                short int* no1 = (short int*)malloc(sizeof(short int));
+                get_free_datablock_no(no1); // 获取空闲数据块
+                inode->addr[index] = *no1;
+                set_datablock_bitmap_used(*no1); // 更新bitmap
+                // 读取存放数据块号的数据块
+                struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(*no1, db1);
+                memset(db1, -1, sizeof(struct data_block)); // 设置数据块为全是负数
+                short int* no2 = (short int*)malloc(sizeof(short int));
+                get_free_datablock_no(no2); // 获取空闲数据块
+                struct data_block* db2 = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(*no2, db2);
+                memset(db2, -1, sizeof(struct data_block)); // 设置数据块为全是负数
+                memcpy(db2, datablock_no, sizeof(short int)); // 第一个块号为分配的新数据块号
+                set_datablock_bitmap_used(*no2); // 更新bitmap
+                // 数据块写回磁盘
+                write_data_block(*no1, db1);
+                write_data_block(*no2, db2);
+                set_datablock_bitmap_used(*datablock_no); // 更新bitmap
+                return 0;
+            } else {
+                struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(inode->addr[index], db1);
+                int k1 = 0;
+                while (k1*sizeof(short int) < BLOCK_SIZE) {
+                    short int no2;
+                    memcpy(&no2, db1 + k1*sizeof(short int), sizeof(short int));
+                    struct data_block* db2 = (struct data_block*)malloc(sizeof(struct data_block));
+                    read_data_block(no2, db2);
+                    int k2 = 0;
+                    while (k2*sizeof(short int) < BLOCK_SIZE) {
+                        short int read_no;
+                        memcpy(&read_no, db2 + k2*sizeof(short int), sizeof(short int));
+                        if (read_no < 0) {
+                            // 这一个数据块未使用，进行替换
+                            memcpy(db2 + k2*sizeof(short int), datablock_no, sizeof(short int));
+                            set_datablock_bitmap_used(*datablock_no); // 更新bitmap已使用数据块
+                            // 写回数据块
+                            write_data_block(no2, db2);
+                            write_data_block(inode->addr[index], db1);
+                            return 0;
+                        }
+                        k2++;
+                    }
+                }
+            }
+        } else if (index == 6) {
+            // 三级间接索引
+            if (inode->addr[index] < 0) {
+                // 三级间接未使用，分配存储数据块号的数据块
+                short int* no1 = (short int*)malloc(sizeof(short int));
+                get_free_datablock_no(no1); // 获取空闲数据块
+                inode->addr[index] = *no1;
+                set_datablock_bitmap_used(*no1); // 更新bitmap
+                // 读取存放数据块号的数据块
+                struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(*no1, db1);
+                memset(db1, -1, sizeof(struct data_block)); // 设置数据块为全是负数
+                short int* no2 = (short int*)malloc(sizeof(short int));
+                get_free_datablock_no(no2); // 获取空闲数据块
+                struct data_block* db2 = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(*no2, db2);
+                memset(db2, -1, sizeof(struct data_block)); // 设置数据块为全是负数
+                memcpy(db2, datablock_no, sizeof(short int)); // 第一个块号为分配的新数据块号
+                set_datablock_bitmap_used(*no2); // 更新bitmap
+                short int* no3 = (short int*)malloc(sizeof(short int));
+                get_free_datablock_no(no3); // 获取空闲数据块
+                struct data_block* db3 = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(*no3, db3);
+                memset(db3, -1, sizeof(struct data_block)); // 设置数据块为全是负数
+                memcpy(db3, datablock_no, sizeof(short int)); // 第一个块号为分配的新数据块号
+                set_datablock_bitmap_used(*no3); // 更新bitmap
+                // 数据块写回磁盘
+                write_data_block(*no1, db1);
+                write_data_block(*no2, db2);
+                write_data_block(*no3, db3);
+                set_datablock_bitmap_used(*datablock_no); // 更新bitmap
+                return 0;
+            } else {
+                struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
+                read_data_block(inode->addr[index], db1);
+                int k1 = 0;
+                while (k1*sizeof(short int) < BLOCK_SIZE) {
+                    short int no2;
+                    memcpy(&no2, db1 + k1*sizeof(short int), sizeof(short int));
+                    struct data_block* db2 = (struct data_block*)malloc(sizeof(struct data_block));
+                    read_data_block(no2, db2);
+                    int k2 = 0;
+                    while (k2*sizeof(short int) < BLOCK_SIZE) {
+                        short int no3;
+                        memcpy(&no3, db2 + k2*sizeof(short int), sizeof(short int));
+                        struct data_block* db3 = (struct data_block*)malloc(sizeof(struct data_block));
+                        read_data_block(no3, db3);
+                        int k3 = 0;
+                        while (k3*sizeof(short int) < BLOCK_SIZE) {
+                            short int read_no;
+                            memcpy(&read_no, db2 + k3*sizeof(short int), sizeof(short int));
+                            if (read_no < 0) {
+                                // 这一个数据块未使用，进行替换
+                                memcpy(db3 + k3*sizeof(short int), datablock_no, sizeof(short int));
+                                set_datablock_bitmap_used(*datablock_no); // 更新bitmap已使用数据块
+                                // 写回数据块
+                                write_data_block(no3, db3);
+                                write_data_block(no2, db2);
+                                write_data_block(inode->addr[index], db1);
+                                return 0;
+                            }
+                            k2++;
+                        }
+                    }
+                }
+            }
         }
         index++;
     }
@@ -316,8 +470,112 @@ void next(struct inode_iter* iter, struct data_block* data_block) {
         iter->read_size += sizeof(struct data_block);
         return;
     } else if (iter->index == 4) {
-        // TODO 一级间接索引
+        // 一级间接索引
+        short int no1 = iter->inode->addr[iter->index];
+        if (!data_block_is_used(no1)) {
+            next(iter, data_block);
+            return;
+        }
+        struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
+        read_data_block(no1, db1);
+        short int datablock_no;
+        memcpy(&datablock_no, db1->data + iter->n*sizeof(short int), sizeof(short int));
+        if (!data_block_is_used(datablock_no)) {
+            iter->n++;
+            next(iter, data_block);
+            return;
+        }
+        iter->datablock_no = datablock_no;
+        read_data_block(datablock_no, data_block);
+        iter->n++;
+        // 该级索引的块号已遍历完毕
+        if (iter->n >= BLOCK_SIZE / sizeof(short int)) {
+            iter->index += 1;
+            iter->n = 0;
+        }
+        return;
+    } else if (iter->index == 5) {
+        // 二级间接索引
+        short int no1 = iter->inode->addr[iter->index];
+        if (!data_block_is_used(no1)) {
+            next(iter, data_block);
+            return;
+        }
+        struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
+        read_data_block(no1, db1);
+        short int no2;
+        memcpy(&no2, db1->data + iter->n*sizeof(short int), sizeof(short int));
+        if (!data_block_is_used(no2)) {
+            iter->n++;
+            next(iter, data_block);
+            return;
+        }
+        struct data_block* db2 = (struct data_block*)malloc(sizeof(struct data_block));
+        read_data_block(no2, db2);
+        short int datablock_no;
+        memcpy(&datablock_no, db2->data + iter->n*sizeof(short int), sizeof(short int));
+        if (!data_block_is_used(datablock_no)) {
+            iter->n++;
+            next(iter, data_block);
+            return;
+        }
+        iter->datablock_no = datablock_no;
+        read_data_block(datablock_no, data_block);
+        iter->n++;
+        // 该级索引的块号已遍历完毕
+        if (iter->n >= pow((BLOCK_SIZE / sizeof(short int)), 2)) {
+            iter->index += 1;
+            iter->n = 0;
+        }
+        return;
+
+    } else if (iter->index == 6) {
+        // 三级间接索引
+        short int no1 = iter->inode->addr[iter->index];
+        if (!data_block_is_used(no1)) {
+            next(iter, data_block);
+            return;
+        }
+        struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
+        read_data_block(no1, db1);
+        short int no2;
+        memcpy(&no2, db1->data + iter->n*sizeof(short int), sizeof(short int));
+        if (!data_block_is_used(no2)) {
+            iter->n++;
+            next(iter, data_block);
+            return;
+        }
+        struct data_block* db2 = (struct data_block*)malloc(sizeof(struct data_block));
+        read_data_block(no2, db2);
+        short int no3;
+        memcpy(&no3, db2->data + iter->n*sizeof(short int), sizeof(short int));
+        if (!data_block_is_used(no3)) {
+            iter->n++;
+            next(iter, data_block);
+            return;
+        }
+        struct data_block* db3 = (struct data_block*)malloc(sizeof(struct data_block));
+        read_data_block(no3, db3);
+        short int datablock_no; // 最终获取的数据块号
+        memcpy(&datablock_no, db3->data + iter->n*sizeof(short int), sizeof(short int));
+        if (!data_block_is_used(datablock_no)) {
+            iter->n++;
+            next(iter, data_block);
+            return;
+        }
+        iter->datablock_no = datablock_no;
+        read_data_block(datablock_no, data_block);
+        iter->n++;
+
+        // 该级索引的块号已遍历完毕
+        if (iter->n >= pow((BLOCK_SIZE / sizeof(short int)), 3)) {
+            iter->index += 1;
+            iter->n = 0;
+        }
+        return;
+
     }
+    printf("[next] out of index\n");
 }
 
 /* 以上是inode迭代器相关函数 */
@@ -338,7 +596,6 @@ int read_file(struct inode* inode, char* data, size_t size) {
         int copy_size = MIN(read_size, sizeof(struct data_block));
         read_size -= copy_size;
         next(iter, datablock);
-        // FIXME next未结束
         memcpy(data + n*sizeof(struct data_block), datablock, copy_size);;
         n += 1;
     }

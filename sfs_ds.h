@@ -107,6 +107,7 @@ struct inode_iter {
     size_t read_size; // 已读取数据块大小
     int index;        // 当前索引下标
     short int datablock_no; // 当前迭代的数据块号
+    int n;            // 多级索引中数据块内的第n个块号（每次间接重新设置为0）
 };
 
 // 以上是SFS相关数据结构
@@ -118,13 +119,17 @@ void new_inode(struct inode* inode, short int ino, char type) {
     if (type == DIR_TYPE) {
         inode->st_mode = __S_IFDIR | 0755; // 目录文件
     } else if (type == FILE_TYPE) {
-        inode->st_mode = __S_IFREG | 0444; // 普通文件
+        inode->st_mode = __S_IFREG | 0755; // 普通文件
+        // 0444
     }
     inode->st_nlink = 1; // 链接数
     inode->st_uid = 0;   // 用户id
     inode->st_gid = 0;   // 用户组id
     inode->st_size = 0;  // 文件大小
     // inode->st_atim = time(NULL); // 上次访问时间（time of last access）
+    for (int i=0; i<=6; i++) {
+        inode->addr[i] = -1; // -1表示未使用该索引级别
+    }
 }
 
 void new_entry(struct entry* entry, char* name, char* ext, char type, short int ino) {
@@ -142,6 +147,7 @@ void new_inode_iter(struct inode_iter* iter, struct inode* inode) {
     iter->read_size = 0;
     iter->index = 0;
     iter->datablock_no = -1; // 当前迭代的数据块号
+    iter->n = 0;
 }
 
 // 以上是SFS数据结构（inode、entry等）初始化函数
