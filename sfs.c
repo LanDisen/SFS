@@ -283,13 +283,6 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
     if (sb->fs_size > 0) {
         // 文件系统已初始化，无需再次初始化虚拟磁盘文件sfs.img
         printf("[SFS_init] SFS has been initialized\n");
-        // 读取根目录entry
-        struct data_block* root_datablock = (struct data_block*)malloc(sizeof(struct data_block));
-        read_data_block(0, root_datablock);
-        memcpy(root_entry, root_datablock, sizeof(struct entry));
-        work_entry = root_entry;
-        free(root_datablock);
-        root_datablock = NULL;
     } else {
         // 进行虚拟磁盘初始化
         printf("[SFS_init] Start initializing SFS\n");
