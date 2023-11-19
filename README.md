@@ -11,7 +11,33 @@ SFS（Simple File System）是一个基于fuse3（用户态文件系统）实现
 
 ## How to use?
 
-创建一个8M大小的初始虚拟磁盘（全0）
+本项目结构如下：
+
+```
+
+SFS/
+├── build
+│   ├── testmount
+│   ├── sfs
+│   └── sfs.o
+├── example
+│   ├── ddriver.sh
+│   ├── kernel_ddriver
+│   └── user_ddriver
+├── img
+│   └── sfsimg.png
+├── makefile
+├── README.md
+├── sfs_ds.h
+├── sfs_rw.h
+├── sfs_utils.h
+├── sfs.c
+└── sfs.img
+
+```
+
+
+在SFS目录下，初始化一个8M大小的全0虚拟磁盘
 
 ```bash
 dd bs=1K count=8K if=/dev/zero of=sfs.img
@@ -20,27 +46,27 @@ dd bs=1K count=8K if=/dev/zero of=sfs.img
 编译执行
 
 ```bash
-mkdir build
+mkdir build # 若不存在build目录
 make
+```
+
+此时build目录内会生成可执行文件，在build目录内创建一个空文件夹用于挂载文件系统
+
+```bash
 cd build
+mkdir testmount # 若不存在testmount目录
 ```
 
-在build目录内创建一个空文件夹用于挂载文件系统
+挂载文件系统（运行文件系统后会自动检查虚拟磁盘是否已进行格式化）
 
 ```bash
-mkdir fuse
-```
-
-挂载文件系统（若未初始化虚拟磁盘该步骤会自动初始化）
-
-```bash
-./sfs -d fuse
+./sfs -d testmount
 ```
 
 卸载文件系统
 
 ```bash
-fusermount -u fuse
+fusermount -u testmount
 ```
 
 ## Tips
