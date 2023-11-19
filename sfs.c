@@ -258,7 +258,7 @@ int remove_entry(struct inode* parent_inode, struct entry* entry) {
 */
 static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
     // 8M大小的磁盘文件映像路径，该文件作为SFS文件系统的载体
-    fs = fopen(fs_img, "wb+");
+    fs = fopen(fs_img, "rb+");
     if (fs == NULL) {
         // 检查映像文件路径
         perror("[SFS_init] Error: failed to open the file system image");
@@ -278,6 +278,7 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
     root_entry->type = DIR_TYPE;       // 目录文件类型
     root_entry->inode = 0;             // 根目录的inode号为0
     work_entry = root_entry;           // 当前工作目录为根目录
+
 
     if (sb->fs_size > 0) {
         // 文件系统已初始化，无需再次初始化虚拟磁盘文件sfs.img
@@ -752,5 +753,7 @@ int main(int argc, char *argv[]) {
     int ret = 0;
     ret = fuse_main(argc, argv, &SFS_operations, NULL);
     fclose(fs);
+    free(sb);
+    sb = NULL;
     return ret;
 }
