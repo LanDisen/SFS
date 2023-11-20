@@ -19,16 +19,16 @@
 /*
  * 基于inode组织磁盘：
  * | super block | inode bitmap | data bitmap | inode area | data area |
- * 一个数据块可以存放 512/64 = 8 个inode
- * 最大文件大小为：(4*512 + 8*512 + 8*8*512 + 8*8*8*512) Byte = 301056 Byte = 294 kB
+ * inode号或块号大小为: sizeof(short int)=2，一个数据块可存放 512/2=256 个块号
+ * 最大文件大小为: (4*512 + 256*512 + 256**2*512 + 256**3*512) Byte = 8224MB
  * 
  * 初始化文件系统：
  * 1. 打开文件系统的载体文件（sfs.img）
- * 2. 检查文件系统是否已经被初始化，如果已经初始化，可以跳过初始化步骤
+ * 2. 检查文件系统是否已经被初始化（检查sb->fs_size），如果已经初始化，可以跳过初始化步骤
  * 3. 如果文件系统尚未初始化，进行初始化操作，包括超级块的填充以及inode位图和数据块位图的初始化
 */
 static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
-    // 8M大小的磁盘文件映像路径，该文件作为SFS文件系统的载体
+    // 8M大小的虚拟磁盘文件映像路径，该文件作为SFS文件系统的载体
     fs = fopen(fs_img, "rb+");
     if (fs == NULL) {
         // 检查映像文件路径
@@ -50,7 +50,6 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
     root_entry->inode = 0;             // 根目录的inode号为0
     work_entry = root_entry;           // 当前工作目录为根目录
 
-
     if (sb->fs_size > 0) {
         // 文件系统已初始化，无需再次初始化虚拟磁盘文件sfs.img
         printf("[SFS_init] SFS has been initialized\n");
@@ -59,15 +58,15 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
         printf("[SFS_init] Start initializing SFS\n");
         // 文件系统虚拟磁盘尚未初始化，进行初始化操作（格式化）
         // 首先填充超级块（超级块位于第0块）
-        sb->fs_size = FS_SIZE / BLOCK_SIZE; // 文件系统大小，以块为单位，共16*1024块
-        sb->first_blk_of_inodebitmap = 1; // inode位图的第一块块号
-        sb->inodebitmap_size = NUM_INODE_BITMAP_BLOCK; // inode位图大小为1块（512B）
-        sb->first_blk_of_databitmap = sb->first_blk_of_inodebitmap + sb->inodebitmap_size; // 数据块位图的第一块块号（第2块）
-        sb->databitmap_size = NUM_DATA_BITMAP_BLOCK; // 数据块位图大小为4块（4 * 512 = 2048 Byte）
-        sb->first_inode = sb->first_blk_of_databitmap + sb->databitmap_size; // inode区的第一块块号（第6块）
-        sb->inode_area_size = sb->inodebitmap_size * BLOCK_SIZE * 8; // inode区大小为512*8块，该文件系统最多有4k个文件
-        sb->first_blk = sb->first_inode + sb->inode_area_size; // 数据区的第一块块号（6 + 4096 = 4102）
-        sb->datasize = sb->databitmap_size * BLOCK_SIZE * 8; // 数据区大小为4*512*8块
+        sb->fs_size                  = FS_SIZE / BLOCK_SIZE;                                // 文件系统大小，以块为单位，共16*1024块
+        sb->first_blk_of_inodebitmap = 1;                                                   // inode位图的第一块块号
+        sb->inodebitmap_size         = NUM_INODE_BITMAP_BLOCK;                              // inode位图大小为1块（512B）
+        sb->first_blk_of_databitmap  = sb->first_blk_of_inodebitmap + sb->inodebitmap_size; // 数据块位图的第一块块号（第2块）
+        sb->databitmap_size          = NUM_DATA_BITMAP_BLOCK;                               // 数据块位图大小为4块（4 * 512 = 2048 Byte）
+        sb->first_inode              = sb->first_blk_of_databitmap + sb->databitmap_size;   // inode区的第一块块号（第6块）
+        sb->inode_area_size          = sb->inodebitmap_size * BLOCK_SIZE * 8;               // inode区大小为512*8块，该文件系统最多有4k个文件
+        sb->first_blk                = sb->first_inode + sb->inode_area_size;               // 数据区的第一块块号（6 + 4096 = 4102）
+        sb->datasize                 = sb->databitmap_size * BLOCK_SIZE * 8;                // 数据区大小为4*512*8块
 
         // 将超级块数据写到到文件系统载体文件
         fseek(fs, 0, SEEK_SET);
@@ -76,23 +75,19 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
         // 将根目录的相关信息填写到inode区的第一个inode
         struct inode* root_inode = (struct inode*)malloc(sizeof(struct inode));
         root_inode->st_mode  = __S_IFDIR | 0755; // 目录文件
-        // root_inode->st_mode = 0755;
-        root_inode->st_ino   = 0; // 根目录的inode号为0（第一个）
-        root_inode->st_nlink = 2; // 链接引用数（根目录为2，其它目录为1）
-        root_inode->st_uid   = 0; // getuid(); // 拥有者的用户ID，0为超级用户
-        root_inode->st_gid   = 0; // getgid(); // 拥有者的组ID，0为超级用户组
-        root_inode->st_size  = 0; // 初始大小为空
-        // root_inode->st_atim  = 0;
+        root_inode->st_ino   = 0;                // 根目录的inode号为0（第一个）
+        root_inode->st_nlink = 2;                // 链接引用数（根目录为2，其它目录为1）
+        root_inode->st_uid   = 0;                // 拥有者的用户ID，0为超级用户
+        root_inode->st_gid   = 0;                // 拥有者的组ID，0为超级用户组
+        root_inode->st_size  = 0;                // 初始大小为空
 
         // 初始化根目录inode
-        write_inode(0, root_inode); 
-        set_inode_bitmap_used(0); // 第一个inode已分配（ino=0）
+        write_inode(0, root_inode); // 写回磁盘更新
+        set_inode_bitmap_used(0);   // 第一个inode已分配（ino=0）
 
         // 完成文件系统初始化，关闭文件系统载体文件 
         free(root_inode);
         root_inode = NULL;
-
-        // test(); // 测试用
     }
 
     // 检查超级块属性
@@ -109,7 +104,6 @@ static void* SFS_init(struct fuse_conn_info* conn, struct fuse_config *cfg) {
     printf("\troot entry: type=%s\n", type);
     printf("\troot entry: inode=%d\n", root_entry->inode);
 
-    // fclose(fs);
     return NULL;
 }
 
@@ -120,45 +114,46 @@ static int SFS_getattr(const char *path,
     (void) fi;
     printf("[SFS_getattr] path=%s\n", path);
 
-    // 过滤文件
-    char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
-    get_file_name(path, file_name);
+    // 过滤文件（包括进行读写文件时一些隐藏文件、临时文件等，防止SFS为它们额外创建数据结构）
+    char fname[MAX_PATH_LEN];
+    get_file_name(path, fname);
     if (strcmp(path, "/") != 0) {
         struct entry* t_entry = (struct entry*)malloc(sizeof(struct entry));
-        fname_ext(file_name, t_entry->name, t_entry->extension);
-        // 进行过滤的文件类型
-        int condition = strcmp(file_name, "") == 0 || 
+        fname_ext(fname, t_entry->name, t_entry->extension); // 分割文件名和扩展名
+        // 进行过滤的文件类型（空路径、临时文件等）
+        int condition = strcmp(fname, "") == 0 || 
                         strcmp(t_entry->extension, "swp") == 0 || 
-                        file_name[0] == '.' || 
-                        file_name[strlen(file_name)-1] == '~';
+                        fname[0] == '.' || 
+                        fname[strlen(fname)-1] == '~';
         if (condition) {
-            printf("[SFS_getattr] filter the hidden file %s\n", file_name);
+            printf("[SFS_getattr] filter the hidden file %s\n", fname);
             free(t_entry);
             return -1;
         }
         free(t_entry);
     }
-
+    char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
+    get_file_name(path, file_name);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
-
+    // 根据路径获取目标entry
     if (find_entry(path, entry) == -1) {
         printf("[SFS_getattr] Error: path %s is not existed\n", path);
         return -ENOENT; // 没有该目录或文件
     }
-    
+    // 根据inode号读取对应索引节点
     struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
     read_inode(entry->inode, inode);
 
-    // 根据inode赋值stbuf(struct stat)
+    // 根据inode将属性赋值stbuf(struct stat)，文件系统便可知道文件属性
     memset(stbuf, 0, sizeof(struct stat));
-    stbuf->st_mode = inode->st_mode;
-    stbuf->st_ino = inode->st_ino;
-	stbuf->st_nlink = inode->st_nlink;
-	stbuf->st_uid = inode->st_uid;
-	stbuf->st_gid = inode->st_gid;
-	stbuf->st_size = inode->st_size;
+    stbuf->st_mode    = inode->st_mode;  // 权限，也可以显示是目录还是普通文件类型
+    stbuf->st_ino     = inode->st_ino;   // inode号（short int）
+	stbuf->st_nlink   = inode->st_nlink; // 链接数
+	stbuf->st_uid     = inode->st_uid;   // 用户id
+	stbuf->st_gid     = inode->st_gid;   // 用户组id
+	stbuf->st_size    = inode->st_size;  // 文件大小
     stbuf->st_blksize = BLOCK_SIZE;
-    stbuf->st_blocks = inode->st_size / BLOCK_SIZE + 1;
+    stbuf->st_blocks  = inode->st_size / BLOCK_SIZE + 1;
 
     free(entry);
     free(inode);
@@ -169,34 +164,38 @@ static int SFS_getattr(const char *path,
 }
 
 /**
- * 读取目录，readdir在ls过程中每次仅会返回一个目录项
+ * 读取目录，使用ls命令会自动调用该方法
+ * readdir在ls过程中每次仅会返回一个目录项
  * 其中offset参数记录着当前一个返回的目录项
 */
 static int SFS_readdir(const char* path, void* buf, 
-                       fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi,
+                       fuse_fill_dir_t filler, off_t offset, 
+                       struct fuse_file_info* fi,
                        enum fuse_readdir_flags flags) {
     (void) fi;
-    off_t cur = offset;
+    off_t cur = offset; // 当前需要进行返回的目录项偏移
     printf("[SFS_readir] path=%s\n", path);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+    // 根据路径解析获取将要读取的entry
     if (find_entry(path, entry) == -1) {
         // 该目录没有对应entry
         printf("[SFS_readir] Error: this path %s does not exist\n", path);
         return -1;
     }
 
-    // 存在该路径对应entry
+    // 存在该路径对应entry，读取索引节点
     struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
     read_inode(entry->inode, inode);
+    // 读取目录结构进行子目录项的文件名匹配
     struct dir* dir = (struct dir*)malloc(sizeof(struct dir));
     read_dir(inode, dir);
 
     if (cur < dir->num_entries) {
         char fname[MAX_FILE_NAME + 1 + MAX_FILE_EXTENSION];
         full_name(dir->entries[cur]->name, dir->entries[cur]->extension, fname);
-        // strcpy(fname, dir->entries[cur]->name);
         // printf("[SFS_readdir] name=%s\n", fname);
-        filler(buf, fname, NULL, ++cur, 0);
+        // 将文件名加入到缓冲区，文件系统会自动获取目录项进行显示
+        filler(buf, fname, NULL, ++cur, 0); 
     }
 
     return 0;
@@ -221,7 +220,7 @@ static int SFS_mkdir(const char* path, mode_t mode) {
         return -1;
     }
 
-    // 寻找空闲inode
+    // 寻找空闲inode装载新创建的目录
     short int* ino = (short int*)malloc(sizeof(short int));
     get_free_ino(ino);
     if (*ino == -1) {
@@ -245,7 +244,7 @@ static int SFS_mkdir(const char* path, mode_t mode) {
     get_file_name(path, file_name);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     new_entry(entry, file_name, "", DIR_TYPE, *ino);
-
+    // 读取父目录的entry，将新创建的子目录加入其中
     struct inode* parent_inode = (struct inode*)malloc(sizeof(struct inode));
     read_inode(parent_entry->inode, parent_inode);
     //printf("[SFS_mkdir] add entry name=%s\n", entry->name);
@@ -274,22 +273,24 @@ static int SFS_rmdir(const char* path) {
         printf("[SFS_rmdir] fail to remove the root dir\n");
         return -1;
     }
+    // 路径解析
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry)); // 待删除的entry
     if (find_entry(path, entry) != 0) {
         // 不存在该路径对应的entry
         printf("[SFS_rmdir] the path %s does not exist\n", path);
         return -1;
     }
-    // 找到了路径对应的entry
+    // 找到了路径需要删除目录对应的entry
+    // 从父目录下将其删除
     struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
     char* parent_path = (char*)malloc(sizeof(path));
     // 获取path的上一级目录
     get_parent_path(path, parent_path); // 获得上一级路径
     find_entry(parent_path, parent_entry); // 获得上一级entry
-    // 遍历parent_inode的数据块进行匹配删除
+    // 遍历parent_inode的数据块进行匹配删除（在remove_entry内）
     struct inode* parent_inode = (struct inode*)malloc(sizeof(struct inode));
     read_inode(parent_entry->inode, parent_inode);
-    remove_entry(parent_inode, entry);
+    remove_entry(parent_inode, entry); // 内部递归操作，将目录的子目录项一同清空
 
     free(entry);
     free(parent_entry);
@@ -298,7 +299,7 @@ static int SFS_rmdir(const char* path) {
 }
 
 // 创建文件
-// touch要求不仅仅是创建文件，还要求可以修改文件的访问时间
+// touch要求不仅仅是创建文件，还要求可以修改文件的访问时间，故实现了utimeus调用
 static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
     printf("[SFS_mknod] path=%s\n", path);
     (void) mode;
@@ -311,7 +312,7 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
         return -1;
     }
 
-
+    // 获取父目录，将新创建文件加入其中
     struct entry* parent_entry = (struct entry*)malloc(sizeof(struct entry));
     char* parent_path = (char*)malloc(sizeof(path));
     // 获取path的上一级目录
@@ -327,7 +328,7 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
         return -1;
     }
 
-    // 寻找空闲inode
+    // 寻找空闲inode指向新创建的文件
     short int* ino = (short int*)malloc(sizeof(short int));
     get_free_ino(ino);
     if (*ino == -1) {
@@ -347,17 +348,14 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
     set_inode_bitmap_used(*ino);
 
     // 创建新的entry作为文件
-    // char file_name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
-    // get_file_name(path, file_name);
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
-
-    fname_ext(file_name, entry->name, entry->extension);
+    fname_ext(file_name, entry->name, entry->extension); // 分割文件名和扩展名
     new_entry(entry, entry->name, entry->extension, FILE_TYPE, *ino);
 
     struct inode* parent_inode = (struct inode*)malloc(sizeof(struct inode));
     read_inode(parent_entry->inode, parent_inode);
     //printf("[SFS_mknod] add entry name=%s\n", entry->name);
-    add_entry(parent_inode, entry);
+    add_entry(parent_inode, entry); // 将新创建文件加入到父目录下
 
     free(ino);
     free(inode);
@@ -376,13 +374,15 @@ static int SFS_mknod(const char* path, mode_t mode, dev_t dev) {
 }
 
 // 删除文件
+// 与删除目录实现基本一致
 static int SFS_unlink(const char* path) {
-        printf("[SFS_unlink] path=%s\n", path);
+    printf("[SFS_unlink] path=%s\n", path);
     if (strcmp(path, "/") == 0) {
         // 根目录无法删除
         printf("[SFS_unlink] fail to remove the root dir\n");
         return -1;
     }
+    // 路径解析获取需要删除的文件
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry)); // 待删除的entry
     if (find_entry(path, entry) != 0) {
         // 不存在该路径对应的entry
@@ -398,7 +398,7 @@ static int SFS_unlink(const char* path) {
     // 遍历parent_inode的数据块进行匹配删除
     struct inode* parent_inode = (struct inode*)malloc(sizeof(struct inode));
     read_inode(parent_entry->inode, parent_inode);
-    remove_entry(parent_inode, entry);
+    remove_entry(parent_inode, entry); // 父目录删除子文件
 
     free(entry);
     free(parent_entry);
@@ -411,7 +411,6 @@ static int SFS_open(const char* path, struct fuse_file_info* fi) {
 	(void)fi;
 	(void)path;
 	return 0;
-
 }
 
 // 关闭文件
@@ -425,8 +424,10 @@ static int SFS_release(const char* path, struct fuse_file_info* fi) {
 static int SFS_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
     (void) fi;
     printf("[SFS_read] path=%s\n", path);
+    // 路径解析获取需要读取的文件entry
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     find_entry(path, entry);
+    // 判断是否属于普通文件类型
     if (entry->type != FILE_TYPE) {
         printf("[SFS_read] the path %s is not a file\n", path);
         return -EISDIR; // 无法读取目录
@@ -440,11 +441,11 @@ static int SFS_read(const char* path, char* buf, size_t size, off_t offset, stru
         // 要保证文件大小大于所要读取的偏移量
         return -ESPIPE;
     }
-    printf("[SFS_read] inode size=%ld\n", inode->st_size);
+    // printf("[SFS_read] inode size=%ld\n", inode->st_size);
 
     char* data = malloc(inode->st_size);
     read_file(inode, data, size); // 将inode存储的数据读取到data
-    // 将数据读到buf内存
+    // 将数据data拷贝到buf缓冲区，即内存
     memcpy(buf, data + offset, size);
     free(entry);
     free(inode);
@@ -455,6 +456,7 @@ static int SFS_read(const char* path, char* buf, size_t size, off_t offset, stru
 static int SFS_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
     (void) fi;
     printf("[SFS_write] path=%s\n", path);
+    // 路径解析
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
     find_entry(path, entry);
     if (entry->type != FILE_TYPE) {
@@ -470,13 +472,14 @@ static int SFS_write(const char* path, const char* buf, size_t size, off_t offse
         free(inode);
         return -ESPIPE;
     }
-
+    // 写后文件的大小
     int new_size = MAX(offset + size, inode->st_size);
     char* data = malloc(new_size);
-    read_file(inode, data, inode->st_size);
-    memcpy(data + offset, buf, size);
-    write_file(inode, data, new_size);
-    inode->st_size = new_size; // 更新inode大小
+    // 首先将文件内容读取出来，在此基础上写
+    read_file(inode, data, inode->st_size); 
+    memcpy(data + offset, buf, size);  // 将写的数据拷贝到读取的数据中
+    write_file(inode, data, new_size); // 将写后的数据拷贝回索引节点
+    inode->st_size = new_size; // 更新inode文件大小
     // 写回inode到磁盘
     write_inode(inode->st_ino, inode);
     return size;
@@ -513,8 +516,8 @@ int main(int argc, char *argv[]) {
     // 即(~0) & mode，在八进制中为：0777 & mode
     // 为后面的代码调用函数mkdir给出最大的权限，避免了创建目录或文件的权限不确定性
     umask(0);
-    // fuse库的入口起点，通过SFS_operation包含的回调函数来执行文件系统操作
     int ret = 0;
+    // fuse库的入口起点，通过SFS_operation包含的回调函数来执行文件系统操作
     ret = fuse_main(argc, argv, &SFS_operations, NULL);
     fclose(fs);
     free(sb);

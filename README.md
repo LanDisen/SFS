@@ -20,10 +20,6 @@ SFS/
 │   ├── testmount
 │   ├── sfs
 │   └── sfs.o
-├── example
-│   ├── ddriver.sh
-│   ├── kernel_ddriver
-│   └── user_ddriver
 ├── img
 │   └── sfsimg.png
 ├── makefile

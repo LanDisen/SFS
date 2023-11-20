@@ -14,7 +14,10 @@
 #include "sfs_ds.h"
 #include "sfs_utils.h"
 
-// 利用inode位图判断该inode号是否已使用
+/**
+ * 利用inode位图判断该inode号是否已使用
+ * @param ino 需要判断的inode号
+ */
 int inode_is_used(short int ino) {
     // inode位图
     uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
@@ -34,7 +37,10 @@ int inode_is_used(short int ino) {
     return 0;
 }
 
-// 利用数据块位图判断对应数据块是否已使用
+/**
+ * 利用数据块位图判断对应数据块是否已使用
+ * @param data_block_no 需要判断的数据块号
+ */
 int data_block_is_used(short int data_block_no) {
     // 数据块位图
     uint8_t data_block_bitmap[4 * BLOCK_SIZE] = {0};
@@ -60,10 +66,10 @@ int set_inode_bitmap_used(short int ino) {
     uint8_t inode_bitmap[NUM_INODE_BITMAP_BLOCK * BLOCK_SIZE] = {0};
     fseek(fs, sb->first_blk_of_inodebitmap * BLOCK_SIZE, SEEK_SET);
     fread(inode_bitmap, sizeof(inode_bitmap), 1, fs);
-    // 定位
+    // 定位位图的行和列
     short int row = ino >> 3; // 位图的行
     short int col = ino % 8; // 位图的列（在0~7之间）
-    // inode号对应位置设为1
+    // inode号对应位置设为1（或一个1）
     uint8_t byte = 1 << (7 - col);
     inode_bitmap[row] |= byte;
     // 写回磁盘
@@ -79,10 +85,10 @@ int set_datablock_bitmap_used(short int data_block_no) {
     uint8_t data_block_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0};
     fseek(fs, sb->first_blk_of_databitmap * BLOCK_SIZE, SEEK_SET);
     fread(data_block_bitmap, sizeof(data_block_bitmap), 1, fs);
-    // 定位
+    // 定位位图的行和列
     short int row = data_block_no >> 3; // 位图的行
     short int col = data_block_no % 8; // 位图的列（在0~7之间）
-    // 数据块号对应位置设为1
+    // 数据块号对应位置设为1（或一个1）
     uint8_t byte = 1 << (7 - col);
     data_block_bitmap[row] |= byte;
     // 写回磁盘
@@ -95,6 +101,7 @@ int set_datablock_bitmap_used(short int data_block_no) {
 /**
  * 获取空闲的inode号
  * 若没有空闲inode则*ino=-1
+ * @param ino 获取了空闲可用的索引节点后，将其inode号赋值给该参数ino
 */
 int get_free_ino(short int* ino) {
     // 读取bitmap
@@ -127,7 +134,8 @@ int get_free_ino(short int* ino) {
 /**
  * 获取空闲的数据块号
  * 未找到空闲数据块则*datablock_no=-1
-*/
+ * @param datablock_no 获取了空闲可用的数据块后，将其数据块号赋值给该参数
+ */
 int get_free_datablock_no(short int* datablock_no) {
     // 读取bitmap
     uint8_t data_block_bitmap[NUM_DATA_BITMAP_BLOCK * BLOCK_SIZE] = {0};
@@ -157,6 +165,7 @@ int get_free_datablock_no(short int* datablock_no) {
 
 /**
  * 设置bitmap中inode号为空闲（释放inode）
+ * @param ino 需要设置为空闲的inode号
 */
 int set_free_inode_bitmap(short int ino) {
     // 读取inode位图
@@ -166,6 +175,7 @@ int set_free_inode_bitmap(short int ino) {
     // bitmap定位
     int row = ino >> 3;
     int col = ino % 8;
+    // 将对应号设置为0（与一个0）
     uint8_t byte = inode_bitmap[row];
     uint8_t mask = 0b11111111 - (1 << (7 - col));
     inode_bitmap[row] = byte & mask;
@@ -178,6 +188,7 @@ int set_free_inode_bitmap(short int ino) {
 
 /**
  * 设置bitmap中数据块号为空闲（释放数据块）
+ * @param datablock_no 需要设置为空闲的数据块号
 */
 int set_free_datablock_bitmap(short int datablock_no) {
     // 读取数据位图
@@ -187,6 +198,7 @@ int set_free_datablock_bitmap(short int datablock_no) {
     // bitmap定位
     int row = datablock_no >> 3;
     int col = datablock_no % 8;
+    // 将对应号设置为0（与一个0）
     uint8_t byte = data_block_bitmap[row];
     uint8_t mask = 0b11111111 - (1 << (7 - col));
     data_block_bitmap[row] = byte & mask;
@@ -197,7 +209,11 @@ int set_free_datablock_bitmap(short int datablock_no) {
     return 0;
 }
 
-// 根据inode号读取inode
+/**
+ * 根据inode号读取inode
+ * @param ino   需要读取的inode号
+ * @param inode 从磁盘中读取inode后拷贝数据到该参数
+ */
 int read_inode(short int ino, struct inode* inode) {
     printf("[read_inode] ino=%d\n", ino);
     if (ino < 0) {
@@ -209,7 +225,10 @@ int read_inode(short int ino, struct inode* inode) {
     return 0;
 }
 
-// 根据数据块号读取数据块
+/** 根据数据块号读取数据块
+ * @param data_block_no 需要读取的数据块号
+ * @param data_block    从磁盘中读取数据块后拷贝数据到该参数
+ */
 int read_data_block(short int data_block_no, struct data_block* data_block) {
     printf("[read_data_block] data_block_no=%d\n", data_block_no);
     if (data_block_no < 0) {
@@ -221,7 +240,11 @@ int read_data_block(short int data_block_no, struct data_block* data_block) {
     return 0;
 }
 
-// 根据inode号写入inode
+/**
+ * 根据inode号写入索引节点
+ * @param ino   需要写入磁盘的inode号
+ * @param inode 索引节点指针，存放了写入磁盘的inode属性
+*/
 int write_inode(short int ino, struct inode* inode) {
     printf("[write_inode] ino=%d\n", ino);
     fseek(fs, (sb->first_inode + ino) * BLOCK_SIZE, SEEK_SET);
@@ -229,7 +252,11 @@ int write_inode(short int ino, struct inode* inode) {
     return 0;
 }
 
-// 根据数据块号写入数据块
+/**
+ * 根据数据块号写入数据块
+ * @param data_block_no 需要写入磁盘的数据块号
+ * @param data_block    数据块指针，存放了写入磁盘的数据
+*/
 int write_data_block(short int data_block_no, struct data_block* data_block) {
     printf("[write_data_block] datablock_no=%d\n", data_block_no);
     fseek(fs, (sb->first_blk + data_block_no) * BLOCK_SIZE, SEEK_SET);
@@ -239,13 +266,16 @@ int write_data_block(short int data_block_no, struct data_block* data_block) {
 
 /**
  * 判断一个数据块有无可用entry，有则返回1，没有则返回0
+ * 用于判断一个目录中的数据块有无存放目录项，没有则进行释放
+ * @param datablock_no 需要判断有无可用entry的数据库号
 */
 int datablock_has_entry(short int datablock_no) {
     struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
     read_data_block(datablock_no, datablock);
     int read_size = BLOCK_SIZE;
     struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
-    int k = 0; // 待读取的entry下标
+    int k = 0; // 下一个待读取的entry下标
+    // 遍历整个数据块取出每个entry
     while (read_size > 0) {
         memcpy(entry, datablock->data + k*sizeof(struct entry), sizeof(struct entry));
         if (entry->type != UNUSED) {
@@ -270,7 +300,7 @@ int alloc_datablock(struct inode* inode, short int* datablock_no) {
     if (inode->st_size == 0) {
         // inode大小为空，在第一个addr指向新的数据块号
         inode->addr[0] = *datablock_no;
-        set_datablock_bitmap_used(*datablock_no);
+        set_datablock_bitmap_used(*datablock_no); // 设置其已被使用
         return 0;
     }
     int index = 0; // 索引级别
@@ -344,6 +374,7 @@ int alloc_datablock(struct inode* inode, short int* datablock_no) {
                 set_datablock_bitmap_used(*datablock_no); // 更新bitmap
                 return 0;
             } else {
+                // 已使用二级间接
                 struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
                 read_data_block(inode->addr[index], db1);
                 int k1 = 0;
@@ -402,6 +433,7 @@ int alloc_datablock(struct inode* inode, short int* datablock_no) {
                 set_datablock_bitmap_used(*datablock_no); // 更新bitmap
                 return 0;
             } else {
+                // 已使用三级间接
                 struct data_block* db1 = (struct data_block*)malloc(sizeof(struct data_block));
                 read_data_block(inode->addr[index], db1);
                 int k1 = 0;
@@ -447,6 +479,8 @@ int alloc_datablock(struct inode* inode, short int* datablock_no) {
 
 /**********************/
 /* inode迭代器相关函数 */
+
+// 判断inode迭代过程有无下一个数据块
 int has_next(struct inode_iter* iter) {
     if (iter->inode->st_size == 0 || iter->read_size >= iter->inode->st_size || iter->index > 6) {
         // 超出间接索引级别，或者已读取完全部数据
@@ -455,7 +489,11 @@ int has_next(struct inode_iter* iter) {
     return 1; // 有下一个数据块
 }
 
-// 一次取出一个可用的数据块（512B），包括其对应的数据块号（可能需要用来将该数据块写回磁盘）
+/**
+ * 一次取出一个可用的数据块（512B），包括其对应的数据块号（可能需要用来将该数据块写回磁盘）
+ * @param iter       inode迭代器
+ * @param data_block 获取的数据块指针
+ */
 void next(struct inode_iter* iter, struct data_block* data_block) {
     if (iter->index <= 3) {
         // 直接索引
@@ -580,11 +618,12 @@ void next(struct inode_iter* iter, struct data_block* data_block) {
 
 /* 以上是inode迭代器相关函数 */
 
-// 根据inode号获取目录（包括子目录和文件）
+// 根据inode获取目录（包括子目录和文件）
 int read_dir(struct inode* inode, struct dir* dir) {
     printf("[read_dir] ino=%d\n", inode->st_ino);
     dir->num_entries = 0;
     int inode_size = inode->st_size;
+    // 创建inode迭代器用于遍历数据块，寻找子目录加入到dir
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, inode);
     struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
@@ -637,7 +676,7 @@ int find_entry(const char* path, struct entry* entry) {
     char* path_copy = (char*)malloc(sizeof(path));
     strcpy(path_copy, path);
     strcpy(path_copy, path + 1);
-    
+    // 当前需要解析的路径以及对应的inode和entry结构
     struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
     struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
     struct entry* cur_entry = (struct entry*)malloc(sizeof(struct entry));
@@ -665,7 +704,7 @@ int find_entry(const char* path, struct entry* entry) {
         }
         if (flag) {
             // 路径匹配成功
-            flag = 0;
+            flag = 0; // 重新设置为0，用于下一级的匹配
             if (strcmp(tail, "") == 0) {
                 *entry = *cur_entry;
                 ret = 0;
@@ -702,6 +741,7 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
         return; // 隐藏文件
     }
     printf("[add_entry] entry name=%s\n", name);
+    // 遍历父目录数据块，将新entry加入到最后的可用位置
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, parent_inode);
     struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
@@ -712,6 +752,7 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
     // 此时datablock是parent_inode的最后一个数据块
     off_t used_size = parent_inode->st_size % BLOCK_SIZE;
     if (used_size == 0) {
+        // 最后一个数据块已满，需要分配新的数据块
         printf("[add_entry] data block is full\n");
         short int* datablock_no = (short int*)malloc(sizeof(short int));
         alloc_datablock(parent_inode, datablock_no); // 分配一个未使用的数据块
@@ -723,12 +764,13 @@ void add_entry(struct inode* parent_inode, struct entry* entry) {
         free(datablock_no);
         datablock_no = NULL;
     } else {
+        // 最后的数据块未满，可以存放新entry
         memcpy(datablock->data + used_size, entry, sizeof(struct entry));
         // 写回磁盘
         write_data_block(iter->datablock_no, datablock);
     }
-    parent_inode->st_size += sizeof(struct entry); // 更新inode大小
-    write_inode(parent_inode->st_ino, parent_inode);
+    parent_inode->st_size += sizeof(struct entry);   // 更新inode大小
+    write_inode(parent_inode->st_ino, parent_inode); // 写回磁盘
     free(iter);
     free(datablock);
     iter = NULL;
@@ -744,7 +786,6 @@ int remove_entry(struct inode* parent_inode, struct entry* entry) {
     // 这里暂时保证待删除的参数entry一定存在
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
     new_inode_iter(iter, parent_inode);
-    
     struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
     int inode_size = parent_inode->st_size;
     struct entry* e = (struct entry*)malloc(sizeof(struct entry));
@@ -808,7 +849,12 @@ int remove_entry(struct inode* parent_inode, struct entry* entry) {
 /*********************************************/
 /* 以下是文件读写相关（read/write）函数 */
 
-// 将inode数据读取到data中
+/**
+ * 将文件对应inode数据读取到data中
+ * @param inode 需要读取文件对应索引节点
+ * @param data  将读取数据拷贝到该data参数中
+ * @param size  需要读取的数据大小
+ */
 int read_file(struct inode* inode, char* data, size_t size) {
     printf("[read_file] ino=%d\n", inode->st_ino);
     struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
@@ -830,7 +876,12 @@ int read_file(struct inode* inode, char* data, size_t size) {
     return 0;
 }
 
-// 将data写到inode数据中（不在这里更新inode大小）
+/**
+ * 将data写到inode数据中（不在这里更新inode大小）
+ * @param inode 需要写的文件对应索引节点
+ * @param data  将已写的data数据写入inode的数据块中
+ * @param size  需要写入的数据大小
+ */
 int write_file(struct inode* inode, char* data, size_t size) {
     printf("[write_file] ino=%d\n", inode->st_ino);
     printf("[write_file] size=%ld\n", size);
@@ -867,7 +918,6 @@ int write_file(struct inode* inode, char* data, size_t size) {
         write_data_block(*datablock_no, datablock);
         write_size -= copy_size;
     }
-
     return 0;
 }
 

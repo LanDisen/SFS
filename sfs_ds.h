@@ -12,6 +12,7 @@
 #define MAX_PATH_LEN 256     // 路径最大字节长度为256字节
 #define MAX_FILE_NAME 8      // 文件名为8个字节
 #define MAX_FILE_EXTENSION 3 // 文件扩展名为3个字节
+#define MAX_NUM_ENTRIES 100  // 目录下存放的最大目录项数量
 
 #define NUM_INODE_BITMAP_BLOCK 1 // inode位图大小为1块（512B）
 #define NUM_DATA_BITMAP_BLOCK 4  // 数据块位图大小为4块（4 * 512 = 2048 Byte）
@@ -86,16 +87,12 @@ struct entry {
 
 // 多级目录结构
 struct dir {
-    struct entry* entries[100];
-    size_t num_entries;
+    struct entry* entries[MAX_NUM_ENTRIES];
+    size_t num_entries; // 目录项数目
 };
 
-/*
- * 数据块
-*/
+// 数据块
 struct data_block {
-    // char data[BLOCK_SIZE - 4]; // sizeof(size_t) = 4
-    // size_t size; // 该磁盘块实际占用的字节大小，不超过512字节
     char data[BLOCK_SIZE];
 };
 

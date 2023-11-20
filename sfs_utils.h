@@ -16,10 +16,10 @@
 
 /**
  * 分割路径
- * example: path="abc/ef/g" -> head="abc", tail="ef/g"
- *          path="abc/ef"   -> head="abc", tail="ef"
- *          path="abc"      -> head="abc", tail=""
- *          path=""         -> head="", tail=""
+ * @example: path="abc/ef/g" -> head="abc", tail="ef/g"
+ *           path="abc/ef"   -> head="abc", tail="ef"
+ *           path="abc"      -> head="abc", tail=""
+ *           path=""         -> head="", tail=""
 */
 void split_path(const char* path, char* head, char* tail) {
     if (strstr(path, "/") == NULL) {
@@ -39,36 +39,6 @@ void split_path(const char* path, char* head, char* tail) {
     strtok(head, "/");
     strcpy(tail, path_copy + strlen(head) + 1);
     free(path_copy);
-}
-
-/**
- * 将src_path添加到dest_path末尾
- * example: dest_path="/abc", src_path="efg" -> "/abc/efg"
- *          dest_path="/",    src_path="ab"  -> "/ab"
-*/
-void concat_path(char* dest_path, char* src_path) {
-    if (strcmp(dest_path, "/") != 0) {
-        strcat(dest_path, "/");
-    }
-    strcat(dest_path, src_path);
-}
-
-/**
- * 计算目录层级（本质是'/'的数量，目前认为path第一个字符一定是'/'）
- * example: path="/abc/ef/g" -> 3
-*/
-int path_level(const char* path) {
-    int cnt = 0; // 统计目录层级
-    if (strcmp(path, "/") == 0) {
-        return 0; // 根目录为0
-    }
-    int n = strlen(path);
-    for (int i=0; i<n; i++) {
-        if (path[i] == '/') {
-            cnt++;
-        }
-    }
-    return cnt;
 }
 
 /**
