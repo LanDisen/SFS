@@ -579,6 +579,232 @@ void next(struct inode_iter* iter, struct data_block* data_block) {
 }
 
 /* 以上是inode迭代器相关函数 */
+
+// 根据inode号获取目录（包括子目录和文件）
+int read_dir(struct inode* inode, struct dir* dir) {
+    printf("[read_dir] ino=%d\n", inode->st_ino);
+    dir->num_entries = 0;
+    int inode_size = inode->st_size;
+    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
+    new_inode_iter(iter, inode);
+    struct data_block* data_block = (struct data_block*)malloc(sizeof(struct data_block));
+    while (has_next(iter) && inode_size > 0) {
+        next(iter, data_block);
+        int read_size = BLOCK_SIZE;
+        int k = 0; // 下一个待读取的entry下标（包括UNUSED类型的entry）
+        while (read_size > 0 && inode_size > 0) {
+            struct entry* entry = (struct entry*)malloc(sizeof(struct entry));
+            memcpy(entry, data_block->data + k*sizeof(struct entry), sizeof(struct entry));
+            k++;
+            if (entry->type != UNUSED) {
+                // 读取到的entry是已使用的才会加入dir（被删除的entry会被设置成UNUSED类型）
+                dir->entries[dir->num_entries++] = entry;
+                inode_size -= sizeof(struct entry);
+            }
+            read_size -= sizeof(struct entry);
+            // free(entry);
+            // entry = NULL;
+        }
+    }
+    free(data_block);
+    free(iter);
+    data_block = NULL;
+    iter = NULL;
+    return 0;
+}
+
+/**
+ * 根据路径获取entry（目录文件或普通文件）
+ * @return: 返回0则找到entry指针，-1则未找到
+ * @example:
+ * path: /abc/ef
+ *     (1) find /'s inode
+ *     (2) find abc's entry
+ *     (3) find abc's inode
+ *     (4) find ef's entry
+*/
+int find_entry(const char* path, struct entry* entry) {
+    printf("[find_entry] path=%s\n", path);
+    if (path == NULL || strcmp(path, "") == 0) {
+        printf("[find_entry] Error: the entry path should not be NULL or empty\n");
+        return -1;
+    }
+    if (strcmp(path, "/") == 0) {
+        // 根目录
+        *entry = *root_entry;
+        return 0;
+    }
+    char* path_copy = (char*)malloc(sizeof(path));
+    strcpy(path_copy, path);
+    strcpy(path_copy, path + 1);
+    
+    struct inode* cur_inode = (struct inode*)malloc(sizeof(struct inode));
+    struct dir* cur_dir = (struct dir*)malloc(sizeof(struct dir));
+    struct entry* cur_entry = (struct entry*)malloc(sizeof(struct entry));
+    *cur_entry = *root_entry;
+    // 路径解析
+    char* cur_path = (char*)malloc(sizeof(path)); // 开始为根目录"/"
+    char* head = (char*)malloc(sizeof(path)); // 分割路径的前部分（待匹配的子目录）
+    char* tail = (char*)malloc(sizeof(path)); // 分割路径的后部分
+    split_path(path_copy, head, tail);
+    strcpy(cur_path, "/");
+    int flag = 0; // 匹配成功标志
+    int ret;
+    char name[MAX_FILE_NAME + MAX_FILE_EXTENSION + 1];
+    while (1) {
+        read_inode(cur_entry->inode, cur_inode);
+        read_dir(cur_inode, cur_dir);
+        for (int i=0; i<cur_dir->num_entries; i++) {
+            full_name(cur_dir->entries[i]->name, cur_dir->entries[i]->extension, name);
+            if (strcmp(name, head) == 0) {
+                // 子目录或文件路径匹配成功
+                *cur_entry = *(cur_dir->entries[i]);
+                flag = 1;
+                break;
+            }
+        }
+        if (flag) {
+            // 路径匹配成功
+            flag = 0;
+            if (strcmp(tail, "") == 0) {
+                *entry = *cur_entry;
+                ret = 0;
+                break;
+            }
+            strcpy(path_copy, tail);
+            split_path(path_copy, head, tail);
+            continue;
+        } else {
+            // 路径匹配失败
+            entry = NULL;
+            ret = -1;
+            break;
+        }
+    }
+    free(path_copy);
+    free(head);
+    free(tail);
+    free(cur_entry);
+    free(cur_inode);
+    free(cur_dir);
+    return ret;
+}
+
+/**
+ * 在父目录下添加新的子entry（目录或文件）
+ * @param parent_inode 父目录的inode指针
+ * @param entry        待添加的entry指针
+*/
+void add_entry(struct inode* parent_inode, struct entry* entry) {
+    char name[MAX_FILE_NAME + 1 + MAX_FILE_EXTENSION];
+    full_name(entry->name, entry->extension, name);
+    if (name[0] == '.') {
+        return; // 隐藏文件
+    }
+    printf("[add_entry] entry name=%s\n", name);
+    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
+    new_inode_iter(iter, parent_inode);
+    struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
+    while (has_next(iter)) {
+        next(iter, datablock);
+    }
+
+    // 此时datablock是parent_inode的最后一个数据块
+    off_t used_size = parent_inode->st_size % BLOCK_SIZE;
+    if (used_size == 0) {
+        printf("[add_entry] data block is full\n");
+        short int* datablock_no = (short int*)malloc(sizeof(short int));
+        alloc_datablock(parent_inode, datablock_no); // 分配一个未使用的数据块
+        read_data_block(*datablock_no, datablock);
+        memcpy(datablock, entry, sizeof(struct entry));
+        // 写回磁盘
+        write_data_block(*datablock_no, datablock);
+        set_datablock_bitmap_used(*datablock_no);
+        free(datablock_no);
+        datablock_no = NULL;
+    } else {
+        memcpy(datablock->data + used_size, entry, sizeof(struct entry));
+        // 写回磁盘
+        write_data_block(iter->datablock_no, datablock);
+    }
+    parent_inode->st_size += sizeof(struct entry); // 更新inode大小
+    write_inode(parent_inode->st_ino, parent_inode);
+    free(iter);
+    free(datablock);
+    iter = NULL;
+    datablock = NULL;
+}
+
+/**
+ * 在父目录下删除entry（目录或文件）
+ * @param parent_inode 父目录的inode指针
+ * @param entry        待删除的entry指针
+*/
+int remove_entry(struct inode* parent_inode, struct entry* entry) {
+    // 这里暂时保证待删除的参数entry一定存在
+    struct inode_iter* iter = (struct inode_iter*)malloc(sizeof(struct inode_iter));
+    new_inode_iter(iter, parent_inode);
+    
+    struct data_block* datablock = (struct data_block*)malloc(sizeof(struct data_block));
+    int inode_size = parent_inode->st_size;
+    struct entry* e = (struct entry*)malloc(sizeof(struct entry));
+    // 遍历parent_inode数据块
+    while (has_next(iter) && inode_size > 0) {
+        next(iter, datablock);
+        // 匹配待删除的entry
+        int read_size = BLOCK_SIZE; 
+        int k = 0; // 从数据块中下一个待读取第k个entry（包括UNUSED类型的entry）
+        while (read_size > 0 && inode_size > 0) {
+            memcpy(e, datablock->data + k*sizeof(struct entry), sizeof(struct entry));
+            read_size -= sizeof(struct entry);
+            if (e->type == UNUSED) {
+                k++;
+                continue;
+            }
+            inode_size -= sizeof(struct entry);
+            if (strcmp(entry->name, e->name) == 0 && strcmp(entry->extension, e->extension) == 0) {
+                // 匹配成功，进行删除
+                if (e->type == DIR_TYPE) {
+                    struct inode* inode = (struct inode*)malloc(sizeof(struct inode));
+                    read_inode(e->inode, inode);
+                    struct dir* dir = (struct dir*)malloc(sizeof(struct dir));
+                    read_dir(inode, dir);
+                    for (int i=0; i<dir->num_entries; i++) {
+                        remove_entry(inode, dir->entries[i]);
+                    }
+                }
+                e->type = UNUSED;
+                // 写回数据块
+                memcpy(datablock->data + k*sizeof(struct entry), e, sizeof(struct entry));
+                write_data_block(iter->datablock_no, datablock);
+                // 如果数据块内没有可用entry则需要释放
+                if (!datablock_has_entry(iter->datablock_no)) {
+                    // 数据块无可用entry，进行释放（设置bitmap）
+                    set_free_datablock_bitmap(iter->datablock_no);
+                }
+                // 释放inode
+                set_free_inode_bitmap(e->inode);
+
+                // 更新inode大小
+                parent_inode->st_size -= sizeof(struct entry);
+                // 写回磁盘
+                write_inode(parent_inode->st_ino, parent_inode);
+                return 0;
+            }
+            k++;
+        }
+        // 该数据块无待删除entry，继续读取下一个数据块
+    }
+    free(iter);
+    free(e);
+    free(datablock);
+    iter = NULL;
+    e = NULL;
+    datablock = NULL;
+    return 0;
+}
+
+
 /*********************************************/
 /* 以下是文件读写相关（read/write）函数 */
 
